@@ -384,7 +384,6 @@ if (form) {
   });
   updateDestination();
 }
-loadSavedOrders();
 
 async function submitAuthForm(form, endpoint, messageSelector) {
   if (!form.reportValidity()) return;
