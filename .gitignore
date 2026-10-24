@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+node_modules/
+
+# Local application state; do not publish account or payment data.
+/airtime.json
+/data.json
+/giftcard.json
+/session.json
+/session.json.*.tmp
+/transactions.json
+/user.json
+/wallet-transactions.json

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="View the Toply demo transaction history." />
+    <meta name="theme-color" content="#f6f7f9" />
+    <title>Transactions — Toply</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=wallet-deposits-1" />
+    <script src="script.js?v=wallet-deposits-1" defer></script>
+  </head>
+  <body data-auth-required="true">
+    <header class="site-header"><div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="Toply dashboard"><span class="brand-icon" aria-hidden="true">↗</span><span>toply<span class="brand-period">.</span></span></a>
+      <div class="account-area"><button class="notification-button" type="button" aria-label="Notifications">♧<span></span></button><span class="account-chip"><span class="account-avatar" data-account-avatar>G</span><span data-account-name>Guest</span></span><button class="nav-signout" type="button" data-sign-out>Sign out</button></div>
+    </div></header>
+    <div class="dashboard-layout">
+      <aside class="dashboard-sidebar" aria-label="Dashboard navigation">
+        <span class="sidebar-label">MENU</span><a class="sidebar-link" href="index.html"><span>⌂</span>Dashboard</a><a class="sidebar-link" href="gift-cards.html"><span>✳</span>Gift cards</a><a class="sidebar-link" href="buy-data.html"><span>▤</span>Buy data</a><a class="sidebar-link" href="buy-airtime.html"><span>ϟ</span>Buy airtime</a><a class="sidebar-link active" href="transactions.html"><span>↻</span>Transactions</a>
+        <div class="sidebar-bottom"><span class="sidebar-label">YOUR ACCOUNT</span><a class="sidebar-link" href="settings.html"><span>⚙</span>Settings</a><div class="sidebar-demo">Demo dashboard<br /><span>Recharge orders are previews</span></div></div>
+      </aside>
+      <main class="dashboard-main page-main">
+        <div class="page-content">
+          <a class="back-link" href="index.html">← Back to dashboard</a>
+          <div class="page-heading"><span class="section-kicker">ACCOUNT ACTIVITY</span><h1>Transactions</h1><p>Keep track of your top-ups and digital purchases.</p></div>
+          <section class="transaction-panel">
+            <div class="transaction-toolbar"><div><h2>All transactions</h2><p>Wallet deposits and saved order previews appear here.</p></div><label class="transaction-filter"><span class="sr-only">Filter transactions</span><select id="transaction-filter" aria-label="Filter transactions"><option value="all">All activity</option><option value="deposits">Wallet deposits</option><option value="topups">Top-ups</option><option value="giftcard">Gift cards</option></select></label></div>
+            <div class="transaction-table-wrap"><table class="transaction-table"><thead><tr><th>TRANSACTION</th><th>DATE</th><th>STATUS</th><th class="amount-column">AMOUNT</th></tr></thead><tbody id="transaction-rows"><tr><td colspan="4"><div class="empty-activity"><span>↻</span><strong>Loading transactions…</strong></div></td></tr></tbody></table></div>
+          </section>
+          <p class="catalog-disclaimer">Deposits require Paystack setup and are credited only after server verification. Recharge and gift-card orders are still previews and do not spend wallet funds.</p>
+        </div>
+        <nav class="mobile-dashboard-nav" aria-label="Dashboard shortcuts"><a href="index.html"><span>⌂</span>Home</a><a href="gift-cards.html"><span>✳</span>Gift cards</a><a href="buy-airtime.html"><span>ϟ</span>Top up</a></nav>
+      </main>
+    </div>
+  </body>
+</html>

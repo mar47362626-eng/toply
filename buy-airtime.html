@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Choose a country and mobile network to prepare an airtime top-up in the Toply demo." />
+    <meta name="theme-color" content="#f6f7f9" />
+    <title>Buy airtime — Toply</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=wallet-deposits-1" />
+    <script src="script.js?v=wallet-deposits-1" defer></script>
+  </head>
+  <body data-auth-required="true">
+    <header class="site-header"><div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="Toply dashboard"><span class="brand-icon" aria-hidden="true">↗</span><span>toply<span class="brand-period">.</span></span></a>
+      <div class="account-area"><button class="notification-button" type="button" aria-label="Notifications">♧<span></span></button><span class="account-chip"><span class="account-avatar" data-account-avatar>G</span><span data-account-name>Guest</span></span><button class="nav-signout" type="button" data-sign-out>Sign out</button></div>
+    </div></header>
+    <div class="dashboard-layout">
+      <aside class="dashboard-sidebar" aria-label="Dashboard navigation">
+        <span class="sidebar-label">MENU</span><a class="sidebar-link" href="index.html"><span>⌂</span>Dashboard</a><a class="sidebar-link" href="gift-cards.html"><span>✳</span>Gift cards</a><a class="sidebar-link" href="buy-data.html"><span>▤</span>Buy data</a><a class="sidebar-link active" href="buy-airtime.html"><span>ϟ</span>Buy airtime</a><a class="sidebar-link" href="transactions.html"><span>↻</span>Transactions</a>
+        <div class="sidebar-bottom"><span class="sidebar-label">YOUR ACCOUNT</span><a class="sidebar-link" href="settings.html"><span>⚙</span>Settings</a><div class="sidebar-demo">Demo dashboard<br /><span>Recharge orders are previews</span></div></div>
+      </aside>
+      <main class="dashboard-main page-main">
+        <div class="page-content">
+          <a class="back-link" href="index.html">← Back to dashboard</a>
+          <div class="page-heading"><span class="section-kicker">MOBILE RECHARGE</span><h1>Buy airtime</h1><p>Send airtime to your phone or someone you care about.</p></div>
+          <div class="page-form-layout">
+            <section class="order-card page-order-card">
+              <div class="order-card-heading"><div><span class="section-kicker">QUICK &amp; EASY</span><h2>Prepare an airtime top-up</h2></div><span class="step-count">DEMO</span></div>
+              <form id="topup-form">
+                <input type="radio" name="service" value="airtime" checked hidden />
+                <div class="form-grid">
+                  <label class="field"><span>Destination country</span><span class="select-wrap"><span id="country-flag" aria-hidden="true">🇳🇬</span><select id="country" name="country" required><option value="NG">Nigeria</option><option value="GH">Ghana</option><option value="KE">Kenya</option><option value="ZA">South Africa</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="IN">India</option><option value="PH">Philippines</option></select><span class="select-chevron">⌄</span></span></label>
+                  <label class="field" id="network-field"><span>Mobile network</span><span class="select-wrap"><select id="network" name="network" required></select><span class="select-chevron">⌄</span></span></label>
+                </div>
+                <label class="field phone-field" id="phone-field"><span>Phone number</span><span class="phone-input"><span class="dial-code" id="dial-code">+234</span><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="801 234 5678" required /></span><small>Double-check this number before proceeding.</small></label>
+                <fieldset class="field plan-field" id="plan-field" hidden><legend>Choose a data plan</legend><div class="plan-options" id="plan-options" role="radiogroup" aria-label="Available data plans"></div></fieldset>
+                <label class="field" id="gift-field" hidden><span>Choose a gift card</span><span class="select-wrap"><select id="gift" name="gift"><option value="">Select a gift card</option><option>Amazon</option><option>Apple</option><option>Google Play</option><option>Steam</option><option>PlayStation</option><option>Spotify</option><option>Netflix</option><option>Xbox</option></select><span class="select-chevron">⌄</span></span></label>
+                <label class="field" id="amount-field"><span><span id="amount-label-text">Top-up amount</span> <span class="field-hint" id="amount-hint">in NGN</span></span><span class="amount-input"><span id="currency-symbol">₦</span><input id="amount" name="amount" type="number" min="1" step="1" placeholder="1,000" required /></span><small id="amount-help">Enter the amount you want to send.</small></label>
+                <button class="button submit-button" type="submit">Review top-up <span aria-hidden="true">→</span></button>
+                <p class="form-disclaimer">Saved orders are previews only. This will not charge you or send airtime.</p><div class="form-message" role="status" aria-live="polite"></div>
+              </form>
+            </section>
+            <aside class="page-side-note"><span class="page-side-icon">ϟ</span><h2>Stay connected.</h2><p>Select the destination and network that match the phone receiving the airtime.</p><div class="demo-reminder"><strong>Preview only</strong><br />Network options and prices are examples; availability depends on your provider.</div></aside>
+          </div>
+        </div>
+        <nav class="mobile-dashboard-nav" aria-label="Dashboard shortcuts"><a href="index.html"><span>⌂</span>Home</a><a href="gift-cards.html"><span>✳</span>Gift cards</a><a class="active" href="buy-airtime.html"><span>ϟ</span>Top up</a></nav>
+      </main>
+    </div>
+    <dialog class="review-dialog" id="review-dialog" aria-labelledby="dialog-title"><form method="dialog" class="dialog-close-form"><button class="dialog-close" aria-label="Close review">×</button></form><span class="dialog-icon">✓</span><span class="section-kicker">DEMO REVIEW</span><h2 id="dialog-title">Review your airtime</h2><p>This is a preview only. A payment provider and recharge service must be connected before real orders can be placed.</p><dl class="review-details" id="review-details"></dl><button class="button dialog-done" id="dialog-done" type="button">Got it</button></dialog>
+  </body>
+</html>

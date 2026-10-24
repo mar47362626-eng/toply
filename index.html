@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Top up mobile airtime, buy data bundles and send digital gift cards with a simple, secure worldwide recharge experience."
+    />
+    <meta name="theme-color" content="#f6f8f4" />
+    <title>Toply — Recharge made easy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=wallet-deposits-1" />
+    <script src="script.js?v=wallet-deposits-1" defer></script>
+  </head>
+  <body>
+    <section class="register-screen" id="register-screen" aria-labelledby="register-title">
+      <div class="register-art">
+        <a class="brand register-brand" href="#register"><span class="brand-icon" aria-hidden="true">↗</span><span>toply<span class="brand-period">.</span></span></a>
+        <div class="register-message">
+          <span class="section-kicker">A LITTLE TOP-UP GOES A LONG WAY</span>
+          <h1>Stay close,<br />wherever you are.</h1>
+          <p>Airtime, data and thoughtful digital gifts — all in one easy place.</p>
+          <div class="register-decoration" aria-hidden="true"><span class="register-decoration-orbit"></span><span class="register-decoration-phone">toply<span>.</span><b>ϟ</b></span><span class="register-decoration-star">✳</span></div>
+        </div>
+        <span class="register-footnote">MADE FOR STAYING CONNECTED</span>
+      </div>
+      <div class="register-panel" id="register">
+        <div class="register-panel-content">
+          <span class="section-kicker">WELCOME TO TOPLY</span>
+          <h2 id="register-title">Your next top-up<br />starts right here.</h2>
+          <p class="register-description">Create an account to open your dashboard and explore the top-up experience.</p>
+          <div class="auth-mode-tabs" role="tablist" aria-label="Account access">
+            <button class="auth-mode-tab active" type="button" role="tab" aria-selected="true" aria-controls="register-form" data-auth-mode="create">Create account</button>
+            <button class="auth-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="login-form" data-auth-mode="login">Log in</button>
+          </div>
+          <form id="register-form" class="register-form">
+            <label class="field">
+              <span>Your name</span>
+              <span class="register-input"><input id="register-name" name="name" type="text" autocomplete="name" placeholder="e.g. Alex Morgan" minlength="2" maxlength="60" required /></span>
+            </label>
+            <label class="field">
+              <span>Email address</span>
+              <span class="register-input"><input id="register-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required /></span>
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <span class="register-input"><input id="register-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="At least 8 characters" required /></span>
+            </label>
+            <button class="button register-submit" type="submit">Create account <span aria-hidden="true">→</span></button>
+            <p class="register-notice">Your password is securely hashed before it is saved. Use at least 8 characters.</p>
+            <div class="form-message" id="register-message" role="status" aria-live="polite"></div>
+          </form>
+          <form id="login-form" class="register-form" hidden>
+            <label class="field">
+              <span>Email address</span>
+              <span class="register-input"><input id="login-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required /></span>
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <span class="register-input"><input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" placeholder="Your password" required /></span>
+            </label>
+            <button class="button register-submit" type="submit">Log in <span aria-hidden="true">→</span></button>
+            <p class="register-notice">Log in with the email and password you used to create your account.</p>
+            <div class="form-message" id="login-message" role="status" aria-live="polite"></div>
+          </form>
+          <p class="register-legal">Your account is managed by this server. NGN deposits can be enabled with Paystack; recharge delivery is still a preview.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="app-shell" id="app-shell" hidden>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="#dashboard" aria-label="Toply dashboard">
+          <span class="brand-icon" aria-hidden="true">↗</span>
+          <span>toply<span class="brand-period">.</span></span>
+        </a>
+        <div class="account-area">
+          <button class="notification-button" type="button" aria-label="Notifications">♧<span></span></button>
+          <span class="account-chip" id="account-chip" hidden><span class="account-avatar" id="account-avatar">A</span><span id="account-name">My account</span></span>
+          <button class="nav-signout" id="sign-out" data-sign-out type="button">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="dashboard-layout">
+      <aside class="dashboard-sidebar" aria-label="Dashboard navigation">
+        <span class="sidebar-label">MENU</span>
+        <a class="sidebar-link active" href="#dashboard"><span>⌂</span>Dashboard</a>
+        <a class="sidebar-link" href="gift-cards.html"><span>✳</span>Gift cards</a>
+        <a class="sidebar-link" href="buy-data.html"><span>▤</span>Buy data</a>
+        <a class="sidebar-link" href="buy-airtime.html"><span>ϟ</span>Buy airtime</a>
+        <a class="sidebar-link" href="transactions.html"><span>↻</span>Transactions</a>
+        <div class="sidebar-bottom">
+          <span class="sidebar-label">YOUR ACCOUNT</span>
+          <a class="sidebar-link" href="settings.html"><span>⚙</span>Settings</a>
+          <button class="sidebar-link sidebar-signout" id="sidebar-sign-out" data-sign-out type="button"><span>↪</span>Sign out</button>
+          <div class="sidebar-demo">Demo dashboard<br /><span>Recharge orders are previews</span></div>
+        </div>
+      </aside>
+
+      <main id="home" class="dashboard-main">
+      <section class="dashboard-section" id="dashboard">
+        <div class="container">
+          <div class="dashboard-pin">
+            <div class="dashboard-heading">
+              <div><span class="section-kicker">OVERVIEW</span><h2>Hey, <span id="dashboard-name">there</span> <span class="welcome-spark">✳</span></h2><p>Welcome back. What would you like to do today?</p></div>
+              <a class="button" href="buy-airtime.html">+ Make a top-up</a>
+            </div>
+            <div class="quick-actions">
+              <a class="quick-action gift-action" href="gift-cards.html"><span class="quick-art gift-art">✳</span><span><strong>Sell Gift Cards</strong><small>Explore gift card options</small></span><span class="quick-arrow">↗</span></a>
+              <a class="quick-action top-action" href="buy-data.html"><span class="quick-art top-art">▤</span><span><strong>Buy airtime &amp; data</strong><small>Find a mobile top-up</small></span><span class="quick-arrow">↗</span></a>
+            </div>
+            <div class="balance-card">
+              <div class="balance-copy"><span>WALLET BALANCE · NGN</span><strong id="wallet-balance">₦0.00</strong><small id="wallet-balance-note">Only confirmed Paystack deposits appear here.</small><div class="wallet-other-balances" id="wallet-other-balances" aria-live="polite"></div></div>
+              <div class="balance-card-actions"><button class="wallet-deposit-button" id="open-deposit" type="button">Add money <span aria-hidden="true">+</span></button><span class="balance-orbit" aria-hidden="true">₦</span></div>
+            </div>
+          </div>
+          <section class="catalog-section" id="gift-catalog">
+            <div class="catalog-heading"><div><span class="section-kicker">SHOP DIGITAL GIFTS</span><h2>Popular gift cards</h2></div><a href="gift-cards.html">View all <span>→</span></a></div>
+            <div class="catalog-tabs" role="group" aria-label="Gift card categories">
+              <button class="catalog-tab active" type="button" data-category="all">All</button>
+              <button class="catalog-tab" type="button" data-category="shopping">Shopping</button>
+              <button class="catalog-tab" type="button" data-category="entertainment">Entertainment</button>
+              <button class="catalog-tab" type="button" data-category="gaming">Gaming</button>
+              <button class="catalog-tab" type="button" data-category="music">Music</button>
+            </div>
+            <div class="gift-grid">
+              <a class="gift-tile gift-apple" href="gift-cards.html?product=Apple" data-category="entertainment"><span class="gift-tile-logo">A</span><strong>Apple</strong><small>App Store &amp; more</small></a>
+              <a class="gift-tile gift-amazon" href="gift-cards.html?product=Amazon" data-category="shopping"><span class="gift-tile-logo">a</span><strong>Amazon</strong><small>Shop something good</small></a>
+              <a class="gift-tile gift-steam" href="gift-cards.html?product=Steam" data-category="gaming"><span class="gift-tile-logo">S</span><strong>Steam</strong><small>PC gaming</small></a>
+              <a class="gift-tile gift-google" href="gift-cards.html?product=Google%20Play" data-category="entertainment"><span class="gift-tile-logo">▶</span><strong>Google Play</strong><small>Apps, games &amp; more</small></a>
+              <a class="gift-tile gift-playstation" href="gift-cards.html?product=PlayStation" data-category="gaming"><span class="gift-tile-logo">P</span><strong>PlayStation</strong><small>Play your way</small></a>
+              <a class="gift-tile gift-spotify" href="gift-cards.html?product=Spotify" data-category="music"><span class="gift-tile-logo">◉</span><strong>Spotify</strong><small>Music &amp; podcasts</small></a>
+              <a class="gift-tile gift-netflix" href="gift-cards.html?product=Netflix" data-category="entertainment"><span class="gift-tile-logo">N</span><strong>Netflix</strong><small>Shows &amp; films</small></a>
+              <a class="gift-tile gift-xbox" href="gift-cards.html?product=Xbox" data-category="gaming"><span class="gift-tile-logo">X</span><strong>Xbox</strong><small>Games &amp; add-ons</small></a>
+            </div>
+            <p class="catalog-disclaimer">Demo catalogue. Availability, prices and supported countries depend on the provider.</p>
+          </section>
+
+          <section class="activity-section" id="activity"><div><span class="section-kicker">YOUR ACCOUNT</span><h2>Recent transactions</h2></div><div class="empty-activity" id="recent-activity"><span>↻</span><strong>No transactions yet</strong><p>Your saved orders will show up here.</p></div></section>
+          <div class="account-info-anchor" id="account-info"></div>
+        </div>
+      </section>
+      <nav class="mobile-dashboard-nav" aria-label="Dashboard shortcuts">
+        <a class="active" href="index.html"><span>⌂</span>Home</a>
+        <a href="gift-cards.html"><span>✳</span>Gift cards</a>
+        <a href="buy-airtime.html"><span>ϟ</span>Top up</a>
+      </nav>
+    </main>
+    </div>
+
+    <dialog class="review-dialog" id="review-dialog" aria-labelledby="dialog-title">
+      <form method="dialog" class="dialog-close-form"><button class="dialog-close" aria-label="Close review">×</button></form>
+      <span class="dialog-icon">✓</span><span class="section-kicker">DEMO REVIEW</span>
+      <h2 id="dialog-title">Your details, at a glance.</h2>
+      <p>This is a preview only. Connect a payment provider and a licensed recharge API before accepting real orders.</p>
+      <dl class="review-details" id="review-details"></dl>
+      <button class="button dialog-done" id="dialog-done" type="button">Got it</button>
+    </dialog>
+    <dialog class="review-dialog deposit-dialog" id="deposit-dialog" aria-labelledby="deposit-title">
+      <form method="dialog" class="dialog-close-form"><button class="dialog-close" aria-label="Close add money dialog">×</button></form>
+      <span class="section-kicker">PAYSTACK · NGN</span>
+      <h2 id="deposit-title">Add money to your wallet</h2>
+      <p>You’ll complete payment securely on Paystack. Your balance changes only after Paystack confirms the deposit.</p>
+      <form id="deposit-form">
+        <label class="field"><span>Deposit amount (NGN)</span><span class="amount-input"><span>₦</span><input id="deposit-amount" name="amount" type="number" min="100" max="10000000" step="1" placeholder="1,000" required /></span><small>Minimum ₦100. This is a payment integration preview until your Paystack account is enabled for live transactions.</small></label>
+        <button class="button submit-button" type="submit">Continue to Paystack <span aria-hidden="true">→</span></button>
+        <div class="form-message" id="deposit-message" role="status" aria-live="polite"></div>
+      </form>
+    </dialog>
+  </body>
+</html>

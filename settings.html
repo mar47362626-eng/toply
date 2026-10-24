@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="View account settings for Toply." />
+    <meta name="theme-color" content="#f6f7f9" />
+    <title>Settings — Toply</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=wallet-deposits-1" />
+    <script src="script.js?v=wallet-deposits-1" defer></script>
+  </head>
+  <body data-auth-required="true">
+    <header class="site-header"><div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="Toply dashboard"><span class="brand-icon" aria-hidden="true">↗</span><span>toply<span class="brand-period">.</span></span></a>
+      <div class="account-area"><button class="notification-button" type="button" aria-label="Notifications">♧<span></span></button><span class="account-chip"><span class="account-avatar" data-account-avatar>G</span><span data-account-name>Guest</span></span><button class="nav-signout" type="button" data-sign-out>Sign out</button></div>
+    </div></header>
+    <div class="dashboard-layout">
+      <aside class="dashboard-sidebar" aria-label="Dashboard navigation">
+        <span class="sidebar-label">MENU</span><a class="sidebar-link" href="index.html"><span>⌂</span>Dashboard</a><a class="sidebar-link" href="gift-cards.html"><span>✳</span>Gift cards</a><a class="sidebar-link" href="buy-data.html"><span>▤</span>Buy data</a><a class="sidebar-link" href="buy-airtime.html"><span>ϟ</span>Buy airtime</a><a class="sidebar-link" href="transactions.html"><span>↻</span>Transactions</a>
+        <div class="sidebar-bottom"><span class="sidebar-label">YOUR ACCOUNT</span><a class="sidebar-link active" href="settings.html"><span>⚙</span>Settings</a><div class="sidebar-demo">Demo dashboard<br /><span>Recharge orders are previews</span></div></div>
+      </aside>
+      <main class="dashboard-main page-main">
+        <div class="page-content">
+          <a class="back-link" href="index.html">← Back to dashboard</a>
+          <div class="page-heading"><span class="section-kicker">YOUR ACCOUNT</span><h1>Settings</h1><p>Manage the preferences for your profile.</p></div>
+          <section class="settings-panel">
+            <div class="settings-panel-heading"><span class="settings-avatar" data-account-avatar>G</span><div><h2 data-account-name>Guest</h2><p>Account profile</p></div></div>
+            <div class="settings-row"><div><strong>Profile name</strong><p>Your account name is saved on this server.</p></div><span data-account-name>Guest</span></div>
+            <div class="settings-row"><div><strong>Password</strong><p>Your password is stored as a one-way scrypt hash.</p></div><span class="settings-badge">Protected</span></div>
+            <div class="settings-row"><div><strong>Payments</strong><p>No payment method is connected.</p></div><span class="settings-badge">Not connected</span></div>
+            <div class="settings-row"><div><strong>Sessions</strong><p>Sign out to revoke this browser session.</p></div><span class="settings-badge">Active</span></div>
+          </section>
+          <div class="settings-actions"><button class="button settings-signout" type="button" data-sign-out>Sign out of demo</button><a href="index.html">Back to dashboard</a></div>
+        </div>
+        <nav class="mobile-dashboard-nav" aria-label="Dashboard shortcuts"><a href="index.html"><span>⌂</span>Home</a><a href="gift-cards.html"><span>✳</span>Gift cards</a><a href="buy-airtime.html"><span>ϟ</span>Top up</a></nav>
+      </main>
+    </div>
+  </body>
+</html>

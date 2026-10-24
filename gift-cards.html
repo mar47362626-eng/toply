@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Browse popular digital gift cards in the Toply demo." />
+    <meta name="theme-color" content="#f6f7f9" />
+    <title>Gift cards — Toply</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=wallet-deposits-1" />
+    <script src="script.js?v=wallet-deposits-1" defer></script>
+  </head>
+  <body data-auth-required="true">
+    <header class="site-header"><div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="Toply dashboard"><span class="brand-icon" aria-hidden="true">↗</span><span>toply<span class="brand-period">.</span></span></a>
+      <div class="account-area"><button class="notification-button" type="button" aria-label="Notifications">♧<span></span></button><span class="account-chip"><span class="account-avatar" data-account-avatar>G</span><span data-account-name>Guest</span></span><button class="nav-signout" type="button" data-sign-out>Sign out</button></div>
+    </div></header>
+    <div class="dashboard-layout">
+      <aside class="dashboard-sidebar" aria-label="Dashboard navigation">
+        <span class="sidebar-label">MENU</span><a class="sidebar-link" href="index.html"><span>⌂</span>Dashboard</a><a class="sidebar-link active" href="gift-cards.html"><span>✳</span>Gift cards</a><a class="sidebar-link" href="buy-data.html"><span>▤</span>Buy data</a><a class="sidebar-link" href="buy-airtime.html"><span>ϟ</span>Buy airtime</a><a class="sidebar-link" href="transactions.html"><span>↻</span>Transactions</a>
+        <div class="sidebar-bottom"><span class="sidebar-label">YOUR ACCOUNT</span><a class="sidebar-link" href="settings.html"><span>⚙</span>Settings</a><div class="sidebar-demo">Demo dashboard<br /><span>Recharge orders are previews</span></div></div>
+      </aside>
+      <main class="dashboard-main page-main">
+        <div class="page-content">
+          <a class="back-link" href="index.html">← Back to dashboard</a>
+          <div class="page-heading"><span class="section-kicker">SHOP DIGITAL GIFTS</span><h1>Gift cards</h1><p>Pick a card and prepare a demo order for someone special.</p></div>
+          <section class="gift-catalog-page">
+            <div class="catalog-heading"><div><span class="section-kicker">FIND YOUR FAVOURITE</span><h2>Popular gift cards</h2></div><span class="catalog-count">8 demo cards</span></div>
+            <div class="catalog-tabs" role="group" aria-label="Gift card categories"><button class="catalog-tab active" type="button" data-category="all">All</button><button class="catalog-tab" type="button" data-category="shopping">Shopping</button><button class="catalog-tab" type="button" data-category="entertainment">Entertainment</button><button class="catalog-tab" type="button" data-category="gaming">Gaming</button><button class="catalog-tab" type="button" data-category="music">Music</button></div>
+            <div class="gift-grid gift-grid-page">
+              <button class="gift-tile gift-apple" type="button" data-gift-product="Apple" data-category="entertainment"><span class="gift-tile-logo">A</span><strong>Apple</strong><small>App Store &amp; more</small></button>
+              <button class="gift-tile gift-amazon" type="button" data-gift-product="Amazon" data-category="shopping"><span class="gift-tile-logo">a</span><strong>Amazon</strong><small>Shop something good</small></button>
+              <button class="gift-tile gift-steam" type="button" data-gift-product="Steam" data-category="gaming"><span class="gift-tile-logo">S</span><strong>Steam</strong><small>PC gaming</small></button>
+              <button class="gift-tile gift-google" type="button" data-gift-product="Google Play" data-category="entertainment"><span class="gift-tile-logo">▶</span><strong>Google Play</strong><small>Apps, games &amp; more</small></button>
+              <button class="gift-tile gift-playstation" type="button" data-gift-product="PlayStation" data-category="gaming"><span class="gift-tile-logo">P</span><strong>PlayStation</strong><small>Play your way</small></button>
+              <button class="gift-tile gift-spotify" type="button" data-gift-product="Spotify" data-category="music"><span class="gift-tile-logo">◉</span><strong>Spotify</strong><small>Music &amp; podcasts</small></button>
+              <button class="gift-tile gift-netflix" type="button" data-gift-product="Netflix" data-category="entertainment"><span class="gift-tile-logo">N</span><strong>Netflix</strong><small>Shows &amp; films</small></button>
+              <button class="gift-tile gift-xbox" type="button" data-gift-product="Xbox" data-category="gaming"><span class="gift-tile-logo">X</span><strong>Xbox</strong><small>Games &amp; add-ons</small></button>
+            </div>
+            <p class="catalog-disclaimer">Demo catalogue. Actual products, prices and countries depend on your gift-card provider.</p>
+          </section>
+          <section class="order-card gift-order-panel" id="gift-order-panel">
+            <div class="order-card-heading"><div><span class="section-kicker">DEMO ORDER</span><h2>Prepare a gift card</h2></div><span class="step-count">NO PAYMENT</span></div>
+            <form id="gift-purchase-form" class="gift-purchase-form">
+              <label class="field"><span>Selected card</span><span class="select-wrap"><select id="gift-product" name="product" required><option value="">Choose a card above</option><option>Apple</option><option>Amazon</option><option>Steam</option><option>Google Play</option><option>PlayStation</option><option>Spotify</option><option>Netflix</option><option>Xbox</option></select><span class="select-chevron">⌄</span></span><small>Selected: <strong id="selected-gift-name">No card selected</strong></small></label>
+              <label class="field"><span>Destination country</span><span class="select-wrap"><select id="gift-country" name="country" required><option value="Nigeria" data-currency="NGN">Nigeria · NGN</option><option value="Ghana" data-currency="GHS">Ghana · GHS</option><option value="Kenya" data-currency="KES">Kenya · KES</option><option value="South Africa" data-currency="ZAR">South Africa · ZAR</option><option value="United States" data-currency="USD">United States · USD</option><option value="United Kingdom" data-currency="GBP">United Kingdom · GBP</option><option value="India" data-currency="INR">India · INR</option><option value="Philippines" data-currency="PHP">Philippines · PHP</option></select><span class="select-chevron">⌄</span></span></label>
+              <label class="field"><span>Recipient email</span><span class="register-input"><input type="email" name="email" autocomplete="email" placeholder="recipient@example.com" required /></span><small>Stored with this order preview in your account history.</small></label>
+              <label class="field"><span>Amount <span class="field-hint">in <span id="gift-currency-label">NGN</span></span></span><span class="amount-input"><span id="gift-symbol">₦</span><input type="number" name="amount" min="1" step="1" placeholder="1,000" required /><input id="gift-currency" name="currency" type="hidden" value="NGN" /></span></label>
+              <button class="button submit-button" type="submit">Save order preview <span aria-hidden="true">→</span></button><p class="form-disclaimer">This order preview is saved in your account. No payment will be taken and no gift card will be delivered.</p><div class="form-message" role="status" aria-live="polite"></div>
+            </form>
+          </section>
+        </div>
+        <nav class="mobile-dashboard-nav" aria-label="Dashboard shortcuts"><a href="index.html"><span>⌂</span>Home</a><a class="active" href="gift-cards.html"><span>✳</span>Gift cards</a><a href="buy-airtime.html"><span>ϟ</span>Top up</a></nav>
+      </main>
+    </div>
+    <dialog class="review-dialog" id="review-dialog" aria-labelledby="dialog-title"><form method="dialog" class="dialog-close-form"><button class="dialog-close" aria-label="Close review">×</button></form><span class="dialog-icon">✓</span><span class="section-kicker">DEMO REVIEW</span><h2 id="dialog-title">Review your gift card</h2><p>Preview only. Connect a payment provider and gift-card supplier before accepting real orders.</p><dl class="review-details" id="review-details"></dl><button class="button dialog-done" id="dialog-done" type="button">Got it</button></dialog>
+  </body>
+</html>
