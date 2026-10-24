@@ -33,6 +33,7 @@ const vtpassNetworks = {
   glo: { name: "Glo", airtime: "glo", data: "glo-data" },
   "9mobile": { name: "9mobile", airtime: "etisalat", data: "etisalat-data" }
 };
+const vtpassMode = process.env.VTPASS_ENV || "sandbox";
 const protectedPages = new Set(["buy-data.html", "buy-airtime.html", "gift-cards.html", "settings.html", "transactions.html"]);
 const publicFiles = new Map([
   ["index.html", "text/html; charset=utf-8"],
@@ -75,6 +76,34 @@ async function initializeStorage() {
   for (const table of ["toply_users", "toply_sessions", "toply_orders", "toply_wallet_transactions"]) {
     const { error } = await supabase.from(table).select("*").limit(0);
     if (error) throw new Error(`Supabase table ${table} is not ready: ${error.message}`);
+  }
+  if (vtpassMode === "live" && process.env.VTPASS_LIVE_ENABLED === "true") {
+    const debitCheck = await supabase.rpc("toply_debit_wallet", {
+      p_user_id: "",
+      p_reference: "",
+      p_amount_minor: 0,
+      p_currency: "NGN"
+    });
+    if (!debitCheck.error || !debitCheck.error.message.includes("INVALID_PURCHASE_AMOUNT")) {
+      throw new Error(`Supabase live-wallet debit RPC is not ready: ${debitCheck.error?.message || "unexpected response"}`);
+    }
+    const refundCheck = await supabase.rpc("toply_refund_wallet", {
+      p_user_id: "",
+      p_purchase_reference: "",
+      p_refund_reference: "",
+      p_amount_minor: 0,
+      p_currency: "NGN"
+    });
+    if (!refundCheck.error || !refundCheck.error.message.includes("USER_NOT_FOUND")) {
+      throw new Error(`Supabase live-wallet refund RPC is not ready: ${refundCheck.error?.message || "unexpected response"}`);
+    }
+    const claimCheck = await supabase.rpc("toply_claim_vtpass_order", {
+      p_user_id: "",
+      p_order_id: ""
+    });
+    if (claimCheck.error || claimCheck.data !== false) {
+      throw new Error(`Supabase VTpass order-claim RPC is not ready: ${claimCheck.error?.message || "unexpected response"}`);
+    }
   }
 }
 
@@ -306,9 +335,10 @@ async function confirmWalletTransaction(reference, userId, verified) {
       writeLocalRecords(walletTransactionsFile, transactions);
     }
     const balances = transactions
-      .filter((item) => item.userId === userId && item.type === "deposit" && item.status === "success")
+      .filter((item) => item.userId === userId && item.status === "success")
       .reduce((result, item) => {
-        result[item.currency] = (result[item.currency] || 0) + item.amountMinor;
+        const direction = item.type === "purchase" ? -1 : 1;
+        result[item.currency] = (result[item.currency] || 0) + direction * item.amountMinor;
         return result;
       }, {});
     return { transaction, balances };
@@ -560,19 +590,22 @@ async function paystackRequest(endpoint, options = {}) {
 }
 
 function vtpassConfigurationError() {
-  if (process.env.VTPASS_ENV && process.env.VTPASS_ENV !== "sandbox") {
-    return "Only the VTpass sandbox is enabled. Live VTpass orders are not available.";
-  }
   if (!process.env.VTPASS_API_KEY || !process.env.VTPASS_PUBLIC_KEY || !process.env.VTPASS_SECRET_KEY) {
-    return "Configure the VTpass sandbox API key, public key, and secret key in the server environment.";
+    return `Configure the VTpass ${vtpassMode} API key, public key, and secret key in the server environment.`;
   }
+  if (!["sandbox", "live"].includes(vtpassMode)) return "VTPASS_ENV must be sandbox or live.";
+  if (vtpassMode === "live" && (process.env.NODE_ENV !== "production" || process.env.VTPASS_LIVE_ENABLED !== "true")) {
+    return "VTpass live purchases are disabled. Enable them only after live API approval and testing.";
+  }
+  if (vtpassMode === "live" && !supabase) return "Live wallet purchases require the Supabase-backed wallet.";
   return "";
 }
 
 async function vtpassRequest(endpoint, { method = "GET", body } = {}) {
   const configurationError = vtpassConfigurationError();
   if (configurationError) throw Object.assign(new Error(configurationError), { statusCode: 503 });
-  const response = await fetch(`https://sandbox.vtpass.com/api/${endpoint}`, {
+  const baseUrl = vtpassMode === "live" ? "https://vtpass.com/api/" : "https://sandbox.vtpass.com/api/";
+  const response = await fetch(`${baseUrl}${endpoint}`, {
     method,
     signal: AbortSignal.timeout(15_000),
     headers: {
@@ -636,9 +669,65 @@ async function vtpassDataPlans(network) {
   })).filter((plan) => typeof plan.code === "string" && plan.name && Number.isFinite(plan.amount) && plan.amount > 0);
 }
 
-async function submitVtpassSandboxOrder(user, type, body) {
+async function debitWalletForPurchase(user, order) {
+  if (!supabase) {
+    throw Object.assign(new Error("Real purchases require the persistent Supabase wallet."), { statusCode: 503 });
+  }
+  const { error } = await supabase.rpc("toply_debit_wallet", {
+    p_user_id: user.id,
+    p_reference: order.id,
+    p_amount_minor: Math.round(order.amount * 100),
+    p_currency: "NGN"
+  });
+  if (error) {
+    if (error.message && error.message.includes("INSUFFICIENT_BALANCE")) {
+      throw Object.assign(new Error("Your NGN wallet balance is too low for this purchase."), { statusCode: 402 });
+    }
+    throw Object.assign(new Error(`Wallet debit could not be confirmed: ${error.message}`), { statusCode: 503 });
+  }
+}
+
+async function refundWalletPurchase(userId, order) {
+  if (!supabase) throw new Error("Cannot refund without the Supabase wallet.");
+  const { error } = await supabase.rpc("toply_refund_wallet", {
+    p_user_id: userId,
+    p_purchase_reference: order.id,
+    p_refund_reference: `refund-${order.id}`,
+    p_amount_minor: Math.round(order.amount * 100),
+    p_currency: "NGN"
+  });
+  if (error) throw new Error(`Wallet refund needs attention: ${error.message}`);
+}
+
+async function claimVtpassSubmission(userId, order) {
+  if (!supabase) return false;
+  const { data, error } = await supabase.rpc("toply_claim_vtpass_order", {
+    p_user_id: userId,
+    p_order_id: order.id
+  });
+  if (error) throw new Error(`Could not safely reserve this provider request: ${error.message}`);
+  return data === true;
+}
+
+async function submitVtpassOrder(user, type, body) {
   const configurationError = vtpassConfigurationError();
   if (configurationError) throw Object.assign(new Error(configurationError), { statusCode: 503 });
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw Object.assign(new Error("The purchase request must be a JSON object."), { statusCode: 400 });
+  }
+  if (body.clientReference !== undefined &&
+      (typeof body.clientReference !== "string" ||
+       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.clientReference))) {
+    throw Object.assign(new Error("The order reference is invalid."), { statusCode: 400 });
+  }
+  const orderId = body.clientReference || crypto.randomUUID();
+  const existingOrder = await findOrderById(orderId, user.id);
+  if (existingOrder) {
+    if (existingOrder.type !== type || !existingOrder.provider?.startsWith("VTpass")) {
+      throw Object.assign(new Error("This order reference was already used for a different order."), { statusCode: 409 });
+    }
+    return existingOrder;
+  }
   const network = body.network;
   const serviceID = vtpassServiceId(type, network);
   const phone = typeof body.phone === "string" ? normalizeNigerianPhone(body.phone) : "";
@@ -663,7 +752,7 @@ async function submitVtpassSandboxOrder(user, type, body) {
   }
 
   const order = {
-    id: crypto.randomUUID(),
+    id: orderId,
     userId: user.id,
     type,
     country: "Nigeria",
@@ -674,47 +763,177 @@ async function submitVtpassSandboxOrder(user, type, body) {
     network: vtpassNetworks[network].name,
     phone,
     requestId: vtpassRequestId(),
-    provider: "VTpass sandbox",
-    sandbox: true
+    serviceID,
+    ...(variationCode ? { variationCode } : {}),
+    provider: vtpassMode === "sandbox" ? "VTpass sandbox" : "VTpass",
+    sandbox: vtpassMode === "sandbox",
+    walletAmountMinor: vtpassMode === "live" ? Math.round(amount * 100) : 0,
+    providerAttempted: false
   };
   if (type === "data") order.plan = planName;
-  await insertOrder(order);
-
   try {
-    const providerResult = await vtpassRequest("pay", {
+    await insertOrder(order);
+  } catch (error) {
+    if (error.code === "23505") {
+      const existing = await findOrderById(order.id, user.id);
+      if (existing && existing.type === type && existing.provider?.startsWith("VTpass")) return existing;
+    }
+    throw error;
+  }
+
+  if (vtpassMode === "live") {
+    try {
+      await debitWalletForPurchase(user, order);
+      order.walletDebited = true;
+      await updateOrder(order);
+    } catch (error) {
+      order.status = error.statusCode === 402 ? "failed" : "pending";
+      order.providerMessage = error.statusCode === 402
+        ? error.message
+        : "Wallet debit is being verified. Check this order before trying again.";
+      try {
+        await updateOrder(order);
+      } catch (persistError) {
+        console.error("VTpass wallet-debit status could not be saved:", persistError.message);
+        throw Object.assign(new Error("Wallet debit could not be confirmed. Do not submit this purchase again; check the order status or contact support."), {
+          statusCode: 503, requestId: order.requestId, orderId: order.id
+        });
+      }
+      if (error.statusCode !== 402) {
+        throw Object.assign(new Error(order.providerMessage), {
+          statusCode: 503, requestId: order.requestId, orderId: order.id
+        });
+      }
+      throw Object.assign(error, { orderId: order.id, requestId: order.requestId });
+    }
+  }
+  try {
+    return await submitVtpassToProvider(user, order);
+  } catch (error) {
+    throw Object.assign(error, {
+      statusCode: error.statusCode || 503,
+      requestId: error.requestId || order.requestId,
+      orderId: error.orderId || order.id
+    });
+  }
+}
+
+async function settleVtpassResult(user, order, providerResult) {
+  const providerStatus = String(providerResult.content && providerResult.content.transactions &&
+    providerResult.content.transactions.status || "").toLowerCase();
+  order.providerCode = providerResult.code || "";
+  order.providerMessage = providerResult.response_description || "";
+  order.providerTransactionId = providerResult.content && providerResult.content.transactions &&
+    String(providerResult.content.transactions.transactionId || "");
+  order.status = providerStatus === "delivered" ? "delivered"
+    : ["failed", "reversed"].includes(providerStatus) || String(providerResult.code) === "016" ? "failed" : "pending";
+  await updateOrder(order);
+  if (!order.sandbox && order.status === "failed" && order.walletDebited && !order.walletRefunded) {
+    try {
+      await refundWalletPurchase(user.id, order);
+      order.walletRefunded = true;
+      await updateOrder(order);
+    } catch (error) {
+      console.error("VTpass failed order refund failed:", error.message);
+      throw Object.assign(new Error("The provider reported failure but the wallet refund did not complete. Do not retry the purchase; contact support."), {
+        statusCode: 503, orderId: order.id
+      });
+    }
+  }
+  return order;
+}
+
+async function submitVtpassToProvider(user, order) {
+  if (!order.providerAttempted) {
+    if (!order.sandbox) {
+      const claimed = await claimVtpassSubmission(user.id, order);
+      if (!claimed) {
+        const latestOrder = await findOrderById(order.id, user.id);
+        if (!latestOrder) throw new Error("The order could not be found after checking its submission state.");
+        return requeryVtpassOrder(user, latestOrder);
+      }
+    }
+    order.providerAttempted = true;
+    order.providerAttemptedAt = new Date().toISOString();
+    await updateOrder(order);
+  }
+  let providerResult;
+  try {
+    providerResult = await vtpassRequest("pay", {
       method: "POST",
       body: {
         request_id: order.requestId,
-        serviceID,
-        amount,
-        phone,
-        ...(variationCode ? { variation_code: variationCode } : {})
+        serviceID: order.serviceID,
+        amount: order.amount,
+        phone: order.phone,
+        ...(order.variationCode ? { variation_code: order.variationCode } : {})
       }
     });
-    const providerStatus = String(providerResult.content && providerResult.content.transactions &&
-      providerResult.content.transactions.status || "").toLowerCase();
-    order.providerCode = providerResult.code || "";
-    order.providerMessage = providerResult.response_description || "";
-    order.providerTransactionId = providerResult.content && providerResult.content.transactions &&
-      String(providerResult.content.transactions.transactionId || "");
-    order.status = providerStatus === "delivered" ? "delivered"
-      : ["initiated", "pending"].includes(providerStatus) || providerResult.code === "099" ? "pending"
-        : providerResult.code === "000" ? "pending" : "failed";
-    await updateOrder(order);
-    return order;
   } catch (error) {
     order.status = "pending";
     order.providerMessage = "The provider response could not be confirmed. Check the transaction status before trying again.";
     await updateOrder(order);
-    throw Object.assign(new Error(order.providerMessage), { statusCode: 503, requestId: order.requestId });
+    throw Object.assign(new Error(order.providerMessage), {
+      statusCode: 503, requestId: order.requestId, orderId: order.id
+    });
   }
+  return settleVtpassResult(user, order, providerResult);
+}
+
+async function requeryVtpassOrder(user, order) {
+  if (order.status === "failed") {
+    if (!order.sandbox && order.walletDebited && !order.walletRefunded) {
+      await refundWalletPurchase(user.id, order);
+      order.walletRefunded = true;
+      await updateOrder(order);
+    }
+    return order;
+  }
+  if (Boolean(order.sandbox) !== (vtpassMode === "sandbox")) {
+    throw Object.assign(new Error("This order was created in a different VTpass environment. Restore its original environment before checking it."), {
+      statusCode: 503
+    });
+  }
+  if (order.status !== "pending") return order;
+  if (!order.sandbox && !order.walletDebited) {
+    try {
+      await debitWalletForPurchase(user, order);
+    } catch (error) {
+      if (error.statusCode === 402) {
+        order.status = "failed";
+        order.providerMessage = error.message;
+        await updateOrder(order);
+        return order;
+      }
+      throw error;
+    }
+    order.walletDebited = true;
+    await updateOrder(order);
+  }
+  if (!order.providerAttempted) return submitVtpassToProvider(user, order);
+  const attemptedAt = Date.parse(order.providerAttemptedAt || "");
+  if (!Number.isFinite(attemptedAt) || Date.now() - attemptedAt < 30_000) {
+    order.providerMessage = "The provider submission is still being confirmed. Wait briefly, then check again.";
+    order.statusCheckedAt = new Date().toISOString();
+    await updateOrder(order);
+    return order;
+  }
+  const result = await vtpassRequest("requery", {
+    method: "POST",
+    body: { request_id: order.requestId }
+  });
+  await settleVtpassResult(user, order, result);
+  order.statusCheckedAt = new Date().toISOString();
+  await updateOrder(order);
+  return order;
 }
 
 async function walletBalancesFor(userId) {
   return (await listWalletTransactions(userId))
-    .filter((transaction) => transaction.userId === userId && transaction.type === "deposit" && transaction.status === "success")
+    .filter((transaction) => transaction.userId === userId && transaction.status === "success")
     .reduce((balances, transaction) => {
-      balances[transaction.currency] = (balances[transaction.currency] || 0) + transaction.amountMinor;
+      const direction = transaction.type === "purchase" ? -1 : 1;
+      balances[transaction.currency] = (balances[transaction.currency] || 0) + direction * transaction.amountMinor;
       return balances;
     }, {});
 }
@@ -775,7 +994,8 @@ async function handleApi(request, response, pathname) {
   if (pathname === "/api/providers/vtpass/status" && request.method === "GET") {
     return jsonResponse(response, 200, {
       enabled: !vtpassConfigurationError(),
-      environment: "sandbox"
+      environment: vtpassMode,
+      walletPurchasesEnabled: vtpassMode === "live" && !vtpassConfigurationError()
     });
   }
 
@@ -794,7 +1014,7 @@ async function handleApi(request, response, pathname) {
   if (vtpassOrderMatch && request.method === "POST") {
     if (!validateRequestOrigin(request)) return jsonResponse(response, 403, { error: "Request origin was rejected." });
     const user = await currentUser(request);
-    if (!user) return jsonResponse(response, 401, { error: "Please log in before testing an order." });
+    if (!user) return jsonResponse(response, 401, { error: "Please log in before placing an order." });
     let body;
     try {
       body = await readJsonBody(request);
@@ -802,13 +1022,32 @@ async function handleApi(request, response, pathname) {
       return jsonResponse(response, error.statusCode || 400, { error: error.message });
     }
     try {
-      const order = await submitVtpassSandboxOrder(user, vtpassOrderMatch[1], body);
+      const order = await submitVtpassOrder(user, vtpassOrderMatch[1], body);
       return jsonResponse(response, 201, { order });
     } catch (error) {
-      if (error.statusCode === 503 && error.requestId) {
-        return jsonResponse(response, 503, { error: error.message, requestId: error.requestId });
+      if (error.orderId) {
+        return jsonResponse(response, error.statusCode || 503, {
+          error: error.message, requestId: error.requestId, orderId: error.orderId
+        });
       }
-      console.error("VTpass sandbox order failed:", error.message);
+      console.error("VTpass order failed:", error.message);
+      return jsonResponse(response, error.statusCode || 502, { error: error.message });
+    }
+  }
+
+  const vtpassRequeryMatch = pathname.match(/^\/api\/providers\/vtpass\/orders\/([0-9a-f-]{36})\/requery$/i);
+  if (vtpassRequeryMatch && request.method === "POST") {
+    if (!validateRequestOrigin(request)) return jsonResponse(response, 403, { error: "Request origin was rejected." });
+    const user = await currentUser(request);
+    if (!user) return jsonResponse(response, 401, { error: "Please log in before checking an order." });
+    try {
+      const order = await findOrderById(vtpassRequeryMatch[1], user.id);
+      if (!order || !order.requestId || !order.provider?.startsWith("VTpass")) {
+        return jsonResponse(response, 404, { error: "VTpass order was not found." });
+      }
+      return jsonResponse(response, 200, { order: await requeryVtpassOrder(user, order) });
+    } catch (error) {
+      console.error("VTpass order status check failed:", error.message);
       return jsonResponse(response, error.statusCode || 502, { error: error.message });
     }
   }
@@ -819,7 +1058,10 @@ async function handleApi(request, response, pathname) {
     const deposits = (await listWalletTransactions(user.id))
       .filter((transaction) => transaction.type === "deposit")
       .map(({ id, amountMinor, currency, status, createdAt }) => ({ id, amountMinor, currency, status, createdAt }));
-    return jsonResponse(response, 200, { currency: paystackCurrency, balances: await walletBalancesFor(user.id), deposits });
+    const refunds = (await listWalletTransactions(user.id))
+      .filter((transaction) => transaction.type === "refund")
+      .map(({ id, amountMinor, currency, status, createdAt }) => ({ id, amountMinor, currency, status, createdAt }));
+    return jsonResponse(response, 200, { currency: paystackCurrency, balances: await walletBalancesFor(user.id), deposits, refunds });
   }
 
   if (pathname === "/api/payments/paystack/initialize" && request.method === "POST") {

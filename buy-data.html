@@ -9,8 +9,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=wallet-deposits-1" />
-    <script src="script.js?v=wallet-deposits-1" defer></script>
+    <link rel="stylesheet" href="styles.css?v=vtpass-live-1" />
+    <script src="script.js?v=vtpass-live-1" defer></script>
   </head>
   <body data-auth-required="true">
     <header class="site-header"><div class="container header-inner">
@@ -43,12 +43,12 @@
                 <p class="form-disclaimer" id="provider-disclaimer">Orders are previews until the VTpass sandbox credentials are configured. No wallet funds are charged and nothing is delivered.</p><div class="form-message" role="status" aria-live="polite"></div>
               </form>
             </section>
-            <aside class="page-side-note"><span class="page-side-icon data-side-icon">▤</span><h2>Pick your plan.</h2><p>Plans and prices change by country and mobile network. Check your details before continuing.</p><div class="demo-reminder"><strong>Nigeria sandbox only</strong><br />VTpass sandbox plans appear when configured. Other countries use example plans and remain previews.</div></aside>
+            <aside class="page-side-note"><span class="page-side-icon data-side-icon">▤</span><h2>Pick your plan.</h2><p>Plans and prices change by country and mobile network. Check your details before continuing.</p><div class="demo-reminder"><strong>Nigeria data only</strong><br />The mode shown above tells you whether orders are previews, sandbox tests, or live wallet purchases. Other countries remain previews.</div></aside>
           </div>
         </div>
         <nav class="mobile-dashboard-nav" aria-label="Dashboard shortcuts"><a href="index.html"><span>⌂</span>Home</a><a href="gift-cards.html"><span>✳</span>Gift cards</a><a class="active" href="buy-data.html"><span>▤</span>Data</a></nav>
       </main>
     </div>
-    <dialog class="review-dialog" id="review-dialog" aria-labelledby="dialog-title"><form method="dialog" class="dialog-close-form"><button class="dialog-close" aria-label="Close review">×</button></form><span class="dialog-icon">✓</span><span class="section-kicker">DEMO REVIEW</span><h2 id="dialog-title">Review your data plan</h2><p>This is a preview only. A payment provider and recharge service must be connected before real orders can be placed.</p><dl class="review-details" id="review-details"></dl><button class="button dialog-done" id="dialog-done" type="button">Got it</button></dialog>
+    <dialog class="review-dialog" id="review-dialog" aria-labelledby="dialog-title"><form method="dialog" class="dialog-close-form"><button class="dialog-close" aria-label="Close review">×</button></form><span class="dialog-icon">✓</span><span class="section-kicker">ORDER STATUS</span><h2 id="dialog-title">Review your data plan</h2><p>This is a preview only. A payment provider and recharge service must be connected before real orders can be placed.</p><dl class="review-details" id="review-details"></dl><button class="button dialog-done" id="provider-requery" type="button" hidden>Check status</button><button class="button dialog-done" id="dialog-done" type="button">Got it</button></dialog>
   </body>
 </html>
