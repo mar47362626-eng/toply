@@ -27,6 +27,12 @@ const paystackCurrency = process.env.PAYSTACK_CURRENCY || "NGN";
 const supportedPaystackCurrencies = new Set(["NGN"]);
 const minimumDepositMinor = 10_000;
 const maximumDepositMinor = 1_000_000_000;
+const vtpassNetworks = {
+  mtn: { name: "MTN", airtime: "mtn", data: "mtn-data" },
+  airtel: { name: "Airtel", airtime: "airtel", data: "airtel-data" },
+  glo: { name: "Glo", airtime: "glo", data: "glo-data" },
+  "9mobile": { name: "9mobile", airtime: "etisalat", data: "etisalat-data" }
+};
 const protectedPages = new Set(["buy-data.html", "buy-airtime.html", "gift-cards.html", "settings.html", "transactions.html"]);
 const publicFiles = new Map([
   ["index.html", "text/html; charset=utf-8"],
@@ -161,6 +167,38 @@ async function insertOrder(order) {
   allTransactions.push(order);
   writeLocalRecords(orderFiles[order.type], typeRecords);
   writeLocalRecords(transactionsFile, allTransactions);
+}
+
+async function findOrderById(id, userId) {
+  if (supabase) {
+    const { data, error } = await supabase.from("toply_orders")
+      .select("data").eq("id", id).eq("user_id", userId).maybeSingle();
+    if (error) throw error;
+    return data?.data || null;
+  }
+  return readLocalRecords(transactionsFile).find((order) => order.id === id && order.userId === userId) || null;
+}
+
+async function updateOrder(order) {
+  if (supabase) {
+    const { error } = await supabase.from("toply_orders").update({ data: order }).eq("id", order.id);
+    if (error) throw error;
+    return;
+  }
+  const allTransactions = readLocalRecords(transactionsFile);
+  const orderIndex = allTransactions.findIndex((item) => item.id === order.id);
+  if (orderIndex < 0) throw new Error("Order record was not found.");
+  allTransactions[orderIndex] = order;
+  writeLocalRecords(transactionsFile, allTransactions);
+  if (order.type === "airtime" || order.type === "data") {
+    const typeFile = orderFiles[order.type];
+    const typeRecords = readLocalRecords(typeFile);
+    const typeIndex = typeRecords.findIndex((item) => item.id === order.id);
+    if (typeIndex >= 0) {
+      typeRecords[typeIndex] = order;
+      writeLocalRecords(typeFile, typeRecords);
+    }
+  }
 }
 
 async function listOrders(userId) {
@@ -521,6 +559,157 @@ async function paystackRequest(endpoint, options = {}) {
   return result.data;
 }
 
+function vtpassConfigurationError() {
+  if (process.env.VTPASS_ENV && process.env.VTPASS_ENV !== "sandbox") {
+    return "Only the VTpass sandbox is enabled. Live VTpass orders are not available.";
+  }
+  if (!process.env.VTPASS_API_KEY || !process.env.VTPASS_PUBLIC_KEY || !process.env.VTPASS_SECRET_KEY) {
+    return "Configure the VTpass sandbox API key, public key, and secret key in the server environment.";
+  }
+  return "";
+}
+
+async function vtpassRequest(endpoint, { method = "GET", body } = {}) {
+  const configurationError = vtpassConfigurationError();
+  if (configurationError) throw Object.assign(new Error(configurationError), { statusCode: 503 });
+  const response = await fetch(`https://sandbox.vtpass.com/api/${endpoint}`, {
+    method,
+    signal: AbortSignal.timeout(15_000),
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": process.env.VTPASS_API_KEY,
+      ...(method === "GET"
+        ? { "public-key": process.env.VTPASS_PUBLIC_KEY }
+        : { "secret-key": process.env.VTPASS_SECRET_KEY })
+    },
+    ...(body ? { body: JSON.stringify(body) } : {})
+  });
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    throw Object.assign(new Error("VTpass returned an unreadable response."), { statusCode: 502 });
+  }
+  if (!response.ok) {
+    throw Object.assign(new Error(result.response_description || "VTpass could not complete the request."), { statusCode: 502 });
+  }
+  return result;
+}
+
+function vtpassRequestId() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Lagos",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}${values.month}${values.day}${values.hour}${values.minute}${crypto.randomBytes(8).toString("hex")}`;
+}
+
+function vtpassServiceId(type, network) {
+  const networkInfo = vtpassNetworks[network];
+  return networkInfo && (type === "airtime" ? networkInfo.airtime : type === "data" ? networkInfo.data : null);
+}
+
+function normalizeNigerianPhone(phone) {
+  const digits = phone.replace(/\D/g, "");
+  if (/^0\d{10}$/.test(digits)) return digits;
+  if (/^234\d{10}$/.test(digits)) return `0${digits.slice(3)}`;
+  return "";
+}
+
+async function vtpassDataPlans(network) {
+  const serviceID = vtpassServiceId("data", network);
+  if (!serviceID) throw Object.assign(new Error("Choose a supported Nigerian network."), { statusCode: 400 });
+  const result = await vtpassRequest(`service-variations?serviceID=${encodeURIComponent(serviceID)}`);
+  const variations = result.content && result.content.variations;
+  if (!Array.isArray(variations)) throw Object.assign(new Error("VTpass did not return data plans for this network."), { statusCode: 502 });
+  return variations.map((plan) => ({
+    code: plan.variation_code,
+    name: plan.name,
+    amount: Number(plan.variation_amount),
+    fixedPrice: plan.fixedPrice === "Yes"
+  })).filter((plan) => typeof plan.code === "string" && plan.name && Number.isFinite(plan.amount) && plan.amount > 0);
+}
+
+async function submitVtpassSandboxOrder(user, type, body) {
+  const configurationError = vtpassConfigurationError();
+  if (configurationError) throw Object.assign(new Error(configurationError), { statusCode: 503 });
+  const network = body.network;
+  const serviceID = vtpassServiceId(type, network);
+  const phone = typeof body.phone === "string" ? normalizeNigerianPhone(body.phone) : "";
+  if (!serviceID) throw Object.assign(new Error("Choose a supported Nigerian airtime or data network."), { statusCode: 400 });
+  if (!phone) throw Object.assign(new Error("Enter a valid Nigerian phone number."), { statusCode: 400 });
+
+  let amount = body.amount;
+  let variationCode;
+  let planName;
+  if (type === "data") {
+    if (typeof body.variationCode !== "string" || body.variationCode.length > 100) {
+      throw Object.assign(new Error("Choose a valid data plan."), { statusCode: 400 });
+    }
+    const plans = await vtpassDataPlans(network);
+    const plan = plans.find((item) => item.code === body.variationCode);
+    if (!plan) throw Object.assign(new Error("That data plan is no longer available. Refresh the plans and try again."), { statusCode: 409 });
+    variationCode = plan.code;
+    planName = plan.name;
+    amount = plan.amount;
+  } else if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount < 50 || amount > 100_000) {
+    throw Object.assign(new Error("Enter an airtime amount between ₦50 and ₦100,000."), { statusCode: 400 });
+  }
+
+  const order = {
+    id: crypto.randomUUID(),
+    userId: user.id,
+    type,
+    country: "Nigeria",
+    currency: "NGN",
+    amount,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    network: vtpassNetworks[network].name,
+    phone,
+    requestId: vtpassRequestId(),
+    provider: "VTpass sandbox",
+    sandbox: true
+  };
+  if (type === "data") order.plan = planName;
+  await insertOrder(order);
+
+  try {
+    const providerResult = await vtpassRequest("pay", {
+      method: "POST",
+      body: {
+        request_id: order.requestId,
+        serviceID,
+        amount,
+        phone,
+        ...(variationCode ? { variation_code: variationCode } : {})
+      }
+    });
+    const providerStatus = String(providerResult.content && providerResult.content.transactions &&
+      providerResult.content.transactions.status || "").toLowerCase();
+    order.providerCode = providerResult.code || "";
+    order.providerMessage = providerResult.response_description || "";
+    order.providerTransactionId = providerResult.content && providerResult.content.transactions &&
+      String(providerResult.content.transactions.transactionId || "");
+    order.status = providerStatus === "delivered" ? "delivered"
+      : ["initiated", "pending"].includes(providerStatus) || providerResult.code === "099" ? "pending"
+        : providerResult.code === "000" ? "pending" : "failed";
+    await updateOrder(order);
+    return order;
+  } catch (error) {
+    order.status = "pending";
+    order.providerMessage = "The provider response could not be confirmed. Check the transaction status before trying again.";
+    await updateOrder(order);
+    throw Object.assign(new Error(order.providerMessage), { statusCode: 503, requestId: order.requestId });
+  }
+}
+
 async function walletBalancesFor(userId) {
   return (await listWalletTransactions(userId))
     .filter((transaction) => transaction.userId === userId && transaction.type === "deposit" && transaction.status === "success")
@@ -581,6 +770,47 @@ async function handlePaystackWebhook(request, response) {
 async function handleApi(request, response, pathname) {
   if (pathname === "/api/paystack/webhook" && request.method === "POST") {
     return handlePaystackWebhook(request, response);
+  }
+
+  if (pathname === "/api/providers/vtpass/status" && request.method === "GET") {
+    return jsonResponse(response, 200, {
+      enabled: !vtpassConfigurationError(),
+      environment: "sandbox"
+    });
+  }
+
+  if (pathname === "/api/providers/vtpass/data-plans" && request.method === "GET") {
+    const user = await currentUser(request);
+    if (!user) return jsonResponse(response, 401, { error: "Please log in to view data plans." });
+    try {
+      const plans = await vtpassDataPlans(new URL(request.url, `http://${request.headers.host || "localhost"}`).searchParams.get("network"));
+      return jsonResponse(response, 200, { currency: "NGN", plans });
+    } catch (error) {
+      return jsonResponse(response, error.statusCode || 502, { error: error.message });
+    }
+  }
+
+  const vtpassOrderMatch = pathname.match(/^\/api\/providers\/vtpass\/orders\/(airtime|data)$/);
+  if (vtpassOrderMatch && request.method === "POST") {
+    if (!validateRequestOrigin(request)) return jsonResponse(response, 403, { error: "Request origin was rejected." });
+    const user = await currentUser(request);
+    if (!user) return jsonResponse(response, 401, { error: "Please log in before testing an order." });
+    let body;
+    try {
+      body = await readJsonBody(request);
+    } catch (error) {
+      return jsonResponse(response, error.statusCode || 400, { error: error.message });
+    }
+    try {
+      const order = await submitVtpassSandboxOrder(user, vtpassOrderMatch[1], body);
+      return jsonResponse(response, 201, { order });
+    } catch (error) {
+      if (error.statusCode === 503 && error.requestId) {
+        return jsonResponse(response, 503, { error: error.message, requestId: error.requestId });
+      }
+      console.error("VTpass sandbox order failed:", error.message);
+      return jsonResponse(response, error.statusCode || 502, { error: error.message });
+    }
   }
 
   if (pathname === "/api/wallet" && request.method === "GET") {

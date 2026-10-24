@@ -31,8 +31,23 @@ The server sends the amount to Paystack in kobo and uses the signed-in account's
 - Configure the Paystack webhook URL as `https://toply.onrender.com/api/paystack/webhook` (replace the domain if your Render URL differs).
 - Never commit `.env`, send the secret key to the browser, or expose the JSON data files publicly.
 - A local `127.0.0.1` website cannot receive Paystack webhooks. The browser return can verify completed payments, while asynchronous bank transfers need the public webhook endpoint to update later.
+- For optional Nigeria airtime/data sandbox tests, follow the VTpass setup below. Do not enable its live endpoint or use live VTpass credentials with this integration.
 
 This is an initial NGN deposit-and-balance prototype, not a worldwide multi-currency wallet. Paystack account support varies by country and currency. It also does not yet deduct wallet funds for airtime, data, or gift-card orders, or support withdrawals. Persistent storage alone does not make this prototype suitable for real customer funds; complete security, accounting, and compliance reviews first.
+
+### VTpass Nigeria sandbox (airtime/data tests only)
+
+1. Create a sandbox account at [sandbox.vtpass.com/register](https://sandbox.vtpass.com/register).
+2. In the sandbox account's **API Keys** settings, generate the API key, public key, and secret key. VTpass documents public-key headers for GET requests and secret-key headers for POST requests.
+3. Add these variables directly in Render's Environment settings:
+   - `VTPASS_ENV` = `sandbox`
+   - `VTPASS_API_KEY` = sandbox API key
+   - `VTPASS_PUBLIC_KEY` = sandbox public key
+   - `VTPASS_SECRET_KEY` = sandbox secret key
+4. Redeploy and check the airtime/data pages. For Nigeria, when sandbox credentials are configured, data plans load from VTpass and order submissions use its sandbox API. VTpass says its sandbox wallet has default test funds and is debited during sandbox transactions.
+5. These calls do **not** debit the customer's Toply wallet and do not deliver real airtime/data. They are provider integration tests only. Non-Nigerian destinations and gift cards remain saved previews. Do not use live VTpass credentials or live endpoints.
+
+Official VTpass references: [sandbox/live integration](https://www.vtpass.com/documentation/integrating-api/), [API key authentication](https://www.vtpass.com/documentation/authentication/), [airtime API](https://www.vtpass.com/documentation/airtime-vtu-api/), [data API](https://www.vtpass.com/documentation/data-subscription-api/), [variation codes](https://www.vtpass.com/documentation/variation-codes/), and [transaction requery](https://www.vtpass.com/documentation/re-query-services/).
 
 ### Supabase SQL schema
 

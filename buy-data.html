@@ -28,7 +28,7 @@
           <div class="page-heading"><span class="section-kicker">MOBILE INTERNET</span><h1>Buy data</h1><p>Find a data bundle for yourself or someone you care about.</p></div>
           <div class="page-form-layout">
             <section class="order-card page-order-card">
-              <div class="order-card-heading"><div><span class="section-kicker">CHOOSE YOUR BUNDLE</span><h2>Prepare a data top-up</h2></div><span class="step-count">DEMO</span></div>
+              <div class="order-card-heading"><div><span class="section-kicker">CHOOSE YOUR BUNDLE</span><h2>Prepare a data top-up</h2></div><span class="step-count" id="provider-mode">PREVIEW</span></div>
               <form id="topup-form">
                 <input type="radio" name="service" value="data" checked hidden />
                 <div class="form-grid">
@@ -40,10 +40,10 @@
                 <label class="field" id="gift-field" hidden><span>Choose a gift card</span><span class="select-wrap"><select id="gift" name="gift"><option value="">Select a gift card</option><option>Amazon</option><option>Apple</option><option>Google Play</option><option>Steam</option><option>PlayStation</option><option>Spotify</option><option>Netflix</option><option>Xbox</option></select><span class="select-chevron">⌄</span></span></label>
                 <label class="field" id="amount-field" hidden><span><span id="amount-label-text">Top-up amount</span> <span class="field-hint" id="amount-hint">in NGN</span></span><span class="amount-input"><span id="currency-symbol">₦</span><input id="amount" name="amount" type="number" min="1" step="1" placeholder="1,000" /></span><small id="amount-help">Choose a plan for your selected destination.</small></label>
                 <button class="button submit-button" type="submit">Review data plan <span aria-hidden="true">→</span></button>
-                <p class="form-disclaimer">Saved orders are previews only. No payment will be taken and no data will be sent.</p><div class="form-message" role="status" aria-live="polite"></div>
+                <p class="form-disclaimer" id="provider-disclaimer">Orders are previews until the VTpass sandbox credentials are configured. No wallet funds are charged and nothing is delivered.</p><div class="form-message" role="status" aria-live="polite"></div>
               </form>
             </section>
-            <aside class="page-side-note"><span class="page-side-icon data-side-icon">▤</span><h2>Pick your plan.</h2><p>Plans and prices change by country and mobile network. Check your details before continuing.</p><div class="demo-reminder"><strong>Preview only</strong><br />Plan prices are examples and are not live provider rates.</div></aside>
+            <aside class="page-side-note"><span class="page-side-icon data-side-icon">▤</span><h2>Pick your plan.</h2><p>Plans and prices change by country and mobile network. Check your details before continuing.</p><div class="demo-reminder"><strong>Nigeria sandbox only</strong><br />VTpass sandbox plans appear when configured. Other countries use example plans and remain previews.</div></aside>
           </div>
         </div>
         <nav class="mobile-dashboard-nav" aria-label="Dashboard shortcuts"><a href="index.html"><span>⌂</span>Home</a><a href="gift-cards.html"><span>✳</span>Gift cards</a><a class="active" href="buy-data.html"><span>▤</span>Data</a></nav>

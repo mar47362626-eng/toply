@@ -20,4 +20,6 @@ Create the `toply_users`, `toply_sessions`, `toply_orders`, and `toply_wallet_tr
 
 Local JSON data is not automatically imported into Supabase. Accounts and balances currently on the old Render deployment will not appear in the new database; users will need to register again. The wallet remains a prototype and is not ready to hold real customer funds.
 
+Nigeria airtime and data can optionally be tested through the VTpass sandbox after configuring its sandbox API credentials. Sandbox requests use VTpass's test wallet, not the user's Toply wallet, and do not deliver real products. International destinations and gift cards remain previews.
+
 GitHub Pages cannot run this app's Node.js API. Hosting it publicly requires a Node.js web-service host.

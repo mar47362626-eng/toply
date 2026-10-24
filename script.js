@@ -25,6 +25,7 @@ const appShell = document.querySelector("#app-shell");
 const loginForm = document.querySelector("#login-form");
 const currencyFormatter = (currency, value) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
 let authenticatedUser = null;
+let vtpassSandboxEnabled = false;
 loadCurrentUser();
 
 async function loadCurrentUser() {
@@ -74,6 +75,7 @@ function showAuthenticatedUser(user) {
     document.title = "Dashboard — Toply";
   }
   loadSavedOrders();
+  if (form) initializeVtpassSandbox();
 }
 
 async function refreshWallet() {
@@ -167,8 +169,78 @@ function updateDestination() {
       });
     });
     planOptions.querySelector(".plan-option")?.classList.add("selected");
+    if (vtpassSandboxEnabled && countrySelect.value === "NG" && selectedService() === "data") {
+      loadVtpassDataPlans();
+    }
   }
   updateService();
+}
+
+async function initializeVtpassSandbox() {
+  try {
+    const response = await fetch("/api/providers/vtpass/status", { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error("Could not check the VTpass sandbox.");
+    const result = await response.json();
+    vtpassSandboxEnabled = result.enabled === true && result.environment === "sandbox";
+    const mode = document.querySelector("#provider-mode");
+    const disclaimer = document.querySelector("#provider-disclaimer");
+    if (mode) mode.textContent = vtpassSandboxEnabled ? "SANDBOX" : "PREVIEW";
+    if (disclaimer) {
+      disclaimer.textContent = vtpassSandboxEnabled
+        ? "Nigeria orders use VTpass sandbox funds only. No Toply wallet balance or real airtime is charged or delivered. Other countries remain previews."
+        : "Orders are previews until the VTpass sandbox credentials are configured. No wallet funds are charged and nothing is delivered.";
+    }
+    updateService();
+    if (vtpassSandboxEnabled && countrySelect.value === "NG" && selectedService() === "data") {
+      await loadVtpassDataPlans();
+    }
+  } catch {
+    const message = form.querySelector(".form-message");
+    message.textContent = "Could not check the VTpass sandbox. Orders remain previews.";
+  }
+}
+
+async function loadVtpassDataPlans() {
+  if (!vtpassSandboxEnabled || countrySelect.value !== "NG") return;
+  const network = networkSelect.value.toLowerCase();
+  const planOptions = document.querySelector("#plan-options");
+  const message = form.querySelector(".form-message");
+  try {
+    const response = await fetch(`/api/providers/vtpass/data-plans?network=${encodeURIComponent(network)}`, {
+      headers: { Accept: "application/json" }
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not load VTpass data plans.");
+    if (countrySelect.value !== "NG" || networkSelect.value.toLowerCase() !== network) return;
+    if (!result.plans.length) throw new Error("VTpass has no sandbox data plans for this network.");
+    planOptions.replaceChildren(...result.plans.map((plan, index) => {
+      const option = document.createElement("label");
+      option.className = `plan-option${index === 0 ? " selected" : ""}`;
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "dataPlan";
+      input.value = plan.code;
+      input.dataset.amount = String(plan.amount);
+      input.required = true;
+      input.checked = index === 0;
+      const name = document.createElement("span");
+      name.className = "plan-option-name";
+      name.textContent = plan.name;
+      const price = document.createElement("span");
+      price.className = "plan-option-price";
+      price.textContent = currencyFormatter("NGN", plan.amount);
+      option.append(input, name, price);
+      input.addEventListener("change", () => {
+        planOptions.querySelectorAll(".plan-option").forEach((item) => {
+          item.classList.toggle("selected", item.querySelector("input").checked);
+        });
+      });
+      return option;
+    }));
+    message.textContent = "";
+  } catch (error) {
+    message.textContent = `${error.message} Existing example plans are previews only.`;
+  }
 }
 
 function updateService() {
@@ -196,6 +268,12 @@ function updateService() {
   document.querySelector("#amount-help").textContent = isGift
     ? "Choose a gift card value in your selected destination’s currency."
     : "Choose an amount in your selected destination’s currency.";
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.firstChild.textContent = vtpassSandboxEnabled && countrySelect.value === "NG"
+      ? "Send sandbox test "
+      : "Save order preview ";
+  }
   form.querySelector(".form-message").textContent = "";
 }
 
@@ -222,6 +300,31 @@ function showSavedOrderReview(type, order) {
   details.push(["Reference", order.id]);
   document.querySelector("#dialog-title").textContent = "Order preview saved";
   document.querySelector("#review-dialog > p").textContent = "This order preview is saved in your account history. No payment was taken and no recharge or gift card was delivered.";
+  document.querySelector("#review-details").replaceChildren(...details.map(([term, description]) => {
+    const row = document.createElement("div");
+    const dt = document.createElement("dt");
+    const dd = document.createElement("dd");
+    dt.textContent = term;
+    dd.textContent = description;
+    row.append(dt, dd);
+    return row;
+  }));
+  dialog.showModal();
+}
+
+function showVtpassSandboxReview(order) {
+  const details = [
+    ["Service", order.type === "data" ? "VTpass sandbox data" : "VTpass sandbox airtime"],
+    ["Network", order.network],
+    ["Phone", order.phone],
+    ...(order.type === "data" ? [["Plan", order.plan]] : []),
+    ["Amount", currencyFormatter("NGN", order.amount)],
+    ["Sandbox status", order.status],
+    ["VTpass request ID", order.requestId]
+  ];
+  document.querySelector("#dialog-title").textContent = "Sandbox order submitted";
+  document.querySelector("#review-dialog > p").textContent =
+    "This was sent to the VTpass sandbox. It did not debit your Toply wallet and does not deliver real airtime or data.";
   document.querySelector("#review-details").replaceChildren(...details.map(([term, description]) => {
     const row = document.createElement("div");
     const dt = document.createElement("dt");
@@ -294,7 +397,8 @@ function renderRecentActivity(container, orders) {
       ? order.product
       : `${formatOrderType(order.type)} · ${order.country}`;
     const meta = document.createElement("span");
-    const status = order.type === "deposit" ? order.status === "success" ? "Confirmed" : "Pending" : "Saved preview";
+    const status = order.type === "deposit" ? order.status === "success" ? "Confirmed" : "Pending"
+      : order.sandbox ? `VTpass sandbox · ${order.status}` : "Saved preview";
     meta.textContent = `${new Date(order.createdAt).toLocaleDateString()} · ${status}`;
     const amount = document.createElement("b");
     amount.textContent = formatOrderAmount(order);
@@ -329,7 +433,8 @@ function renderTransactions(container, orders, deposits, filter) {
     const date = document.createElement("td");
     date.textContent = new Date(order.createdAt).toLocaleString();
     const status = document.createElement("td");
-    status.textContent = order.type === "deposit" ? order.status === "success" ? "Confirmed" : "Pending" : "Saved preview";
+    status.textContent = order.type === "deposit" ? order.status === "success" ? "Confirmed" : "Pending"
+      : order.sandbox ? `VTpass sandbox · ${order.status}` : "Saved preview";
     const amount = document.createElement("td");
     amount.className = "amount-column";
     amount.textContent = formatOrderAmount(order);
@@ -362,8 +467,34 @@ async function saveOrder(type, payload, formElement) {
   }
 }
 
+async function submitVtpassSandboxOrder(type, payload, formElement) {
+  const message = formElement.querySelector(".form-message");
+  const button = formElement.querySelector('button[type="submit"]');
+  button.disabled = true;
+  message.textContent = "Submitting to the VTpass sandbox…";
+  try {
+    const response = await fetch(`/api/providers/vtpass/orders/${type}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      const requestInfo = result.requestId ? ` Request ID: ${result.requestId}. Check status before retrying.` : "";
+      throw new Error(`${result.error || "VTpass sandbox order failed."}${requestInfo}`);
+    }
+    showVtpassSandboxReview(result.order);
+    await loadSavedOrders();
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 if (form) {
   countrySelect.addEventListener("change", updateDestination);
+  networkSelect.addEventListener("change", loadVtpassDataPlans);
   serviceRadios.forEach((radio) => radio.addEventListener("change", updateService));
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -379,9 +510,26 @@ if (form) {
       currency: destination.currency
     };
     if (service === "data") {
-      const [plan, price] = document.querySelector('input[name="dataPlan"]:checked').value.split("|");
+      const selectedPlan = document.querySelector('input[name="dataPlan"]:checked');
+      if (vtpassSandboxEnabled && countrySelect.value === "NG" && selectedPlan && selectedPlan.dataset.amount) {
+        submitVtpassSandboxOrder("data", {
+          network: networkSelect.value.toLowerCase(),
+          phone: document.querySelector("#phone").value.trim(),
+          variationCode: selectedPlan.value
+        }, form);
+        return;
+      }
+      const [plan, price] = selectedPlan.value.split("|");
       Object.assign(payload, { network: networkSelect.value, phone: document.querySelector("#phone").value.trim(), plan, amount: Number(price) });
     } else {
+      if (vtpassSandboxEnabled && countrySelect.value === "NG") {
+        submitVtpassSandboxOrder("airtime", {
+          network: networkSelect.value.toLowerCase(),
+          phone: document.querySelector("#phone").value.trim(),
+          amount: Number(amountInput.value)
+        }, form);
+        return;
+      }
       Object.assign(payload, { network: networkSelect.value, phone: document.querySelector("#phone").value.trim(), amount: Number(amountInput.value) });
     }
     saveOrder(service === "data" ? "data" : "airtime", payload, form);
