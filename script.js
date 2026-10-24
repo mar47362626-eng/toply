@@ -367,7 +367,7 @@ function showVtpassReview(order) {
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Could not check order status.");
-        statusText.textContent = `${result.order.sandbox ? "VTpass sandbox" : "VTpass"} · ${result.order.status}`;
+        showVtpassReview(result.order);
         await refreshWallet();
         await loadSavedOrders();
       } catch (error) {
@@ -487,6 +487,7 @@ function renderTransactions(container, orders, deposits, filter) {
     date.textContent = new Date(order.createdAt).toLocaleString();
     const status = document.createElement("td");
     const statusText = document.createElement("span");
+    status.setAttribute("aria-live", "polite");
     statusText.textContent = ["deposit", "refund"].includes(order.type) ? order.status === "success" ? "Confirmed" : "Pending"
       : order.sandbox ? `VTpass sandbox · ${order.status}`
         : order.provider?.startsWith("VTpass") ? `VTpass · ${order.status}` : "Saved preview";
@@ -499,6 +500,7 @@ function renderTransactions(container, orders, deposits, filter) {
       checkButton.addEventListener("click", async () => {
         checkButton.disabled = true;
         checkButton.textContent = "Checking…";
+        statusText.textContent = "Checking status with VTpass…";
         try {
           const response = await fetch(`/api/providers/vtpass/orders/${encodeURIComponent(order.id)}/requery`, {
             method: "POST",
@@ -506,11 +508,11 @@ function renderTransactions(container, orders, deposits, filter) {
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || "Could not check order status.");
-          showVtpassReview(result.order);
+          statusText.textContent = `${result.order.sandbox ? "VTpass sandbox" : "VTpass"} · ${result.order.status}`;
           await refreshWallet();
           await loadSavedOrders();
         } catch (error) {
-          statusText.textContent = `Pending · ${error.message}`;
+          statusText.textContent = `Status check failed: ${error.message}. Order remains pending; do not submit it again.`;
         } finally {
           checkButton.disabled = false;
           checkButton.textContent = "Check status";
