@@ -482,7 +482,7 @@ async function handleApi(request, response, pathname) {
 
   if (pathname === "/api/auth/me" && request.method === "GET") {
     const user = currentUser(request);
-    if (!user) return jsonResponse(response, 401, { error: "You are not signed in." });
+    if (!user) return jsonResponse(response, 200, { user: null });
     return jsonResponse(response, 200, { user });
   }
 

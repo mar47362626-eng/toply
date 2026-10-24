@@ -36,6 +36,10 @@ async function loadCurrentUser() {
     }
     if (!response.ok) throw new Error("Could not check the current account.");
     const result = await response.json();
+    if (!result.user) {
+      if (!registerScreen) window.location.replace("index.html");
+      return;
+    }
     authenticatedUser = result.user;
     showAuthenticatedUser(authenticatedUser);
     await refreshWallet();
