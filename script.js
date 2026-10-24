@@ -323,6 +323,10 @@ function showSavedOrderReview(type, order) {
 }
 
 function showVtpassReview(order) {
+  const title = document.querySelector("#dialog-title");
+  const message = document.querySelector("#review-dialog > p");
+  const detailsList = document.querySelector("#review-details");
+  if (!title || !message || !detailsList || !dialog) return;
   if (authenticatedUser && order.status !== "pending") {
     localStorage.removeItem(`toply-vtpass-order-${authenticatedUser.id}-${order.type}`);
   }
@@ -337,11 +341,11 @@ function showVtpassReview(order) {
     ["VTpass request ID", order.requestId],
     ["Toply reference", order.id]
   ];
-  document.querySelector("#dialog-title").textContent = order.sandbox ? "Sandbox order submitted" : "Airtime/data order submitted";
-  document.querySelector("#review-dialog > p").textContent = order.sandbox
+  title.textContent = order.sandbox ? "Sandbox order submitted" : "Airtime/data order submitted";
+  message.textContent = order.sandbox
     ? "This was sent to the VTpass sandbox. It did not debit your Toply wallet and does not deliver real airtime or data."
     : "Your wallet was charged. If the provider status is pending, check it here before attempting another purchase.";
-  document.querySelector("#review-details").replaceChildren(...details.map(([term, description]) => {
+  detailsList.replaceChildren(...details.map(([term, description]) => {
     const row = document.createElement("div");
     const dt = document.createElement("dt");
     const dd = document.createElement("dd");
@@ -363,11 +367,12 @@ function showVtpassReview(order) {
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Could not check order status.");
-        showVtpassReview(result.order);
+        statusText.textContent = `${result.order.sandbox ? "VTpass sandbox" : "VTpass"} · ${result.order.status}`;
         await refreshWallet();
         await loadSavedOrders();
       } catch (error) {
-        document.querySelector("#review-dialog > p").textContent = error.message;
+        const reviewMessage = document.querySelector("#review-dialog > p");
+        if (reviewMessage) reviewMessage.textContent = error.message;
       } finally {
         checkButton.disabled = false;
         checkButton.textContent = "Check status";
