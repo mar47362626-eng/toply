@@ -13,6 +13,14 @@ The server sends the amount to Paystack in kobo and uses the signed-in account's
 
 ## Deploying
 
+- On Render, create a **Web Service** from the GitHub repository, use `node server.js` as the start command, and add these environment variables in the service's **Environment** settings:
+  - `NODE_ENV` = `production`
+  - `HOST` = `0.0.0.0`
+  - `APP_BASE_URL` = your Render service's full HTTPS URL, such as `https://toply-example.onrender.com` (replace this with the URL Render assigns)
+  - `PAYSTACK_CURRENCY` = `NGN`
+  - `PAYSTACK_LIVE_ENABLED` = `false`
+- Do not set `PORT`; Render supplies it automatically. Do not create or upload a `.env` file on GitHub.
+- Leave `PAYSTACK_SECRET_KEY` unset to keep Paystack deposits disabled. Never use a live key until you are ready to accept real payments and have completed the production requirements below.
 - Set `APP_BASE_URL` to the public website origin, for example `https://example.com`.
 - Configure the Paystack webhook URL as `https://example.com/api/paystack/webhook`.
 - Deploy behind HTTPS. In production, set `PAYSTACK_LIVE_ENABLED=true` only after replacing the test secret with the correct live secret and completing Paystack's account and business approvals.
