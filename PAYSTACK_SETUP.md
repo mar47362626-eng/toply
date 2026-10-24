@@ -13,15 +13,18 @@ The server sends the amount to Paystack in kobo and uses the signed-in account's
 
 ## Deploying
 
-- On Render, create a persistent PostgreSQL database in the same region as the web service. In the web service's **Environment** settings, set `DATABASE_URL` to the database's **internal** connection URL. The app creates its tables at startup and refuses to start in production if this value is missing.
+- In Supabase, create the four private Toply tables using the SQL schema below. Enable Row Level Security and do not add public access policies.
 - Set the web service's build command to `npm install` and start command to `npm start`.
 - Add these environment variables in the web service's **Environment** settings:
   - `NODE_ENV` = `production`
   - `HOST` = `0.0.0.0`
   - `APP_BASE_URL` = `https://toply.onrender.com` (use your actual Render service URL)
+  - `SUPABASE_URL` = your Supabase Project URL, such as `https://your-project-id.supabase.co`
+  - `SUPABASE_SERVICE_ROLE_KEY` = your Supabase server-only service-role key
   - `PAYSTACK_CURRENCY` = `NGN`
   - `PAYSTACK_LIVE_ENABLED` = `false`
 - Do not set `PORT`; Render supplies it automatically. Do not create or upload a `.env` file on GitHub.
+- Get the Project URL and service-role key from your Supabase project's API settings. Add them directly in Render; never paste the service-role key into browser code, GitHub, or chat. The server checks that all four tables exist at startup.
 - Keep `PAYSTACK_SECRET_KEY` unset and `PAYSTACK_LIVE_ENABLED=false` while setting up and checking the database. Do not enable live payments yet.
 - The existing JSON files and accounts are not imported into PostgreSQL. Users will need to register again after the database-backed deployment.
 - Once the database-backed deployment is verified and all production requirements are met, add your Paystack live secret directly in Render's environment settings and explicitly enable live payments. Never paste the secret into source code, GitHub, or chat.
@@ -30,3 +33,60 @@ The server sends the amount to Paystack in kobo and uses the signed-in account's
 - A local `127.0.0.1` website cannot receive Paystack webhooks. The browser return can verify completed payments, while asynchronous bank transfers need the public webhook endpoint to update later.
 
 This is an initial NGN deposit-and-balance prototype, not a worldwide multi-currency wallet. Paystack account support varies by country and currency. It also does not yet deduct wallet funds for airtime, data, or gift-card orders, or support withdrawals. Persistent storage alone does not make this prototype suitable for real customer funds; complete security, accounting, and compliance reviews first.
+
+### Supabase SQL schema
+
+Run this in the Supabase SQL Editor before deploying:
+
+```sql
+create table if not exists public.toply_users (
+  id text primary key,
+  name text not null,
+  email text not null unique,
+  password_hash text not null,
+  created_at text not null
+);
+
+create table if not exists public.toply_sessions (
+  token_hash text primary key,
+  user_id text not null references public.toply_users(id) on delete cascade,
+  expires_at bigint not null
+);
+create index if not exists toply_sessions_expiry_idx
+  on public.toply_sessions(expires_at);
+
+create table if not exists public.toply_orders (
+  id text primary key,
+  user_id text not null references public.toply_users(id),
+  order_type text not null,
+  created_at text not null,
+  data jsonb not null
+);
+create index if not exists toply_orders_user_created_idx
+  on public.toply_orders(user_id, created_at desc);
+
+create table if not exists public.toply_wallet_transactions (
+  id text primary key,
+  user_id text not null references public.toply_users(id),
+  reference text not null unique,
+  type text not null,
+  amount_minor bigint not null,
+  currency text not null,
+  status text not null,
+  created_at text not null,
+  paystack_transaction_id text,
+  confirmed_at text
+);
+create index if not exists toply_wallet_user_created_idx
+  on public.toply_wallet_transactions(user_id, created_at desc);
+
+alter table public.toply_users enable row level security;
+alter table public.toply_sessions enable row level security;
+alter table public.toply_orders enable row level security;
+alter table public.toply_wallet_transactions enable row level security;
+
+revoke all on public.toply_users from anon, authenticated;
+revoke all on public.toply_sessions from anon, authenticated;
+revoke all on public.toply_orders from anon, authenticated;
+revoke all on public.toply_wallet_transactions from anon, authenticated;
+```

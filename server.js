@@ -3,11 +3,15 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { promisify } = require("node:util");
-const { Pool } = require("pg");
+const { createClient } = require("@supabase/supabase-js");
 
 const scrypt = promisify(crypto.scrypt);
 const root = __dirname;
-const database = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
+const supabase = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+  : null;
 const userFile = path.join(root, "user.json");
 const sessionFile = path.join(root, "session.json");
 const walletTransactionsFile = path.join(root, "wallet-transactions.json");
@@ -53,82 +57,48 @@ function withWalletWriteLock(callback) {
 }
 
 async function initializeStorage() {
-  if (process.env.NODE_ENV === "production" && !database) {
-    throw new Error("DATABASE_URL is required in production. Attach a persistent PostgreSQL database before starting Toply.");
+  if (process.env.NODE_ENV === "production" && !supabase) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in production.");
   }
-  if (!database) {
+  if (!supabase) {
     for (const file of [userFile, sessionFile, walletTransactionsFile, ...Object.values(orderFiles), transactionsFile]) {
       if (!fs.existsSync(file)) writeLocalRecords(file, []);
     }
     return;
   }
-  await database.query(`
-    CREATE TABLE IF NOT EXISTS toply_users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS toply_sessions (
-      token_hash TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES toply_users(id) ON DELETE CASCADE,
-      expires_at BIGINT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS toply_sessions_expiry_idx ON toply_sessions(expires_at);
-    CREATE TABLE IF NOT EXISTS toply_orders (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES toply_users(id),
-      order_type TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      data JSONB NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS toply_orders_user_created_idx ON toply_orders(user_id, created_at DESC);
-    CREATE TABLE IF NOT EXISTS toply_wallet_transactions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES toply_users(id),
-      reference TEXT NOT NULL UNIQUE,
-      type TEXT NOT NULL,
-      amount_minor BIGINT NOT NULL,
-      currency TEXT NOT NULL,
-      status TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      paystack_transaction_id TEXT,
-      confirmed_at TEXT
-    );
-    CREATE INDEX IF NOT EXISTS toply_wallet_user_created_idx
-      ON toply_wallet_transactions(user_id, created_at DESC);
-  `);
+  for (const table of ["toply_users", "toply_sessions", "toply_orders", "toply_wallet_transactions"]) {
+    const { error } = await supabase.from(table).select("*").limit(0);
+    if (error) throw new Error(`Supabase table ${table} is not ready: ${error.message}`);
+  }
 }
 
 async function findUserById(userId) {
-  if (database) {
-    const { rows } = await database.query(
-      "SELECT id, name, email, password_hash AS \"passwordHash\", created_at AS \"createdAt\" FROM toply_users WHERE id = $1",
-      [userId]
-    );
-    return rows[0] || null;
+  if (supabase) {
+    const { data, error } = await supabase.from("toply_users")
+      .select("id, name, email, password_hash, created_at").eq("id", userId).maybeSingle();
+    if (error) throw error;
+    return data ? { id: data.id, name: data.name, email: data.email, passwordHash: data.password_hash, createdAt: data.created_at } : null;
   }
   return readLocalRecords(userFile).find((user) => user.id === userId) || null;
 }
 
 async function findUserByEmail(email) {
-  if (database) {
-    const { rows } = await database.query(
-      "SELECT id, name, email, password_hash AS \"passwordHash\", created_at AS \"createdAt\" FROM toply_users WHERE email = $1",
-      [email]
-    );
-    return rows[0] || null;
+  if (supabase) {
+    const { data, error } = await supabase.from("toply_users")
+      .select("id, name, email, password_hash, created_at").eq("email", email).maybeSingle();
+    if (error) throw error;
+    return data ? { id: data.id, name: data.name, email: data.email, passwordHash: data.password_hash, createdAt: data.created_at } : null;
   }
   return readLocalRecords(userFile).find((user) => user.email === email) || null;
 }
 
 async function insertUser(user) {
-  if (database) {
-    await database.query(
-      "INSERT INTO toply_users (id, name, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)",
-      [user.id, user.name, user.email, user.passwordHash, user.createdAt]
-    );
+  if (supabase) {
+    const { error } = await supabase.from("toply_users").insert({
+      id: user.id, name: user.name, email: user.email,
+      password_hash: user.passwordHash, created_at: user.createdAt
+    });
+    if (error) throw error;
     return;
   }
   const users = readLocalRecords(userFile);
@@ -137,15 +107,13 @@ async function insertUser(user) {
 }
 
 async function findUserForSession(tokenHash) {
-  if (database) {
-    const { rows } = await database.query(
-      `SELECT u.id, u.name, u.email
-       FROM toply_sessions s
-       JOIN toply_users u ON u.id = s.user_id
-       WHERE s.token_hash = $1 AND s.expires_at > $2`,
-      [tokenHash, Date.now()]
-    );
-    return rows[0] || null;
+  if (supabase) {
+    const { data, error } = await supabase.from("toply_sessions")
+      .select("user_id").eq("token_hash", tokenHash).gt("expires_at", Date.now()).maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const user = await findUserById(data.user_id);
+    return user ? { id: user.id, name: user.name, email: user.email } : null;
   }
   const now = Date.now();
   const sessions = readLocalRecords(sessionFile);
@@ -158,11 +126,10 @@ async function findUserForSession(tokenHash) {
 }
 
 async function insertSession(userId, tokenHash, expiresAt) {
-  if (database) {
-    await database.query(
-      "INSERT INTO toply_sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)",
-      [tokenHash, userId, expiresAt]
-    );
+  if (supabase) {
+    const { error } = await supabase.from("toply_sessions")
+      .insert({ token_hash: tokenHash, user_id: userId, expires_at: expiresAt });
+    if (error) throw error;
     return;
   }
   const sessions = readLocalRecords(sessionFile);
@@ -171,19 +138,21 @@ async function insertSession(userId, tokenHash, expiresAt) {
 }
 
 async function deleteSession(tokenHash) {
-  if (database) {
-    await database.query("DELETE FROM toply_sessions WHERE token_hash = $1", [tokenHash]);
+  if (supabase) {
+    const { error } = await supabase.from("toply_sessions").delete().eq("token_hash", tokenHash);
+    if (error) throw error;
     return;
   }
   writeLocalRecords(sessionFile, readLocalRecords(sessionFile).filter((session) => session.tokenHash !== tokenHash));
 }
 
 async function insertOrder(order) {
-  if (database) {
-    await database.query(
-      "INSERT INTO toply_orders (id, user_id, order_type, created_at, data) VALUES ($1, $2, $3, $4, $5)",
-      [order.id, order.userId, order.type, order.createdAt, order]
-    );
+  if (supabase) {
+    const { error } = await supabase.from("toply_orders").insert({
+      id: order.id, user_id: order.userId, order_type: order.type,
+      created_at: order.createdAt, data: order
+    });
+    if (error) throw error;
     return;
   }
   const typeRecords = readLocalRecords(orderFiles[order.type]);
@@ -195,12 +164,11 @@ async function insertOrder(order) {
 }
 
 async function listOrders(userId) {
-  if (database) {
-    const { rows } = await database.query(
-      "SELECT data FROM toply_orders WHERE user_id = $1 ORDER BY created_at DESC",
-      [userId]
-    );
-    return rows.map((row) => row.data);
+  if (supabase) {
+    const { data, error } = await supabase.from("toply_orders")
+      .select("data").eq("user_id", userId).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data.map((row) => row.data);
   }
   return readLocalRecords(transactionsFile)
     .filter((order) => order.userId === userId)
@@ -208,15 +176,16 @@ async function listOrders(userId) {
 }
 
 async function listWalletTransactions(userId) {
-  if (database) {
-    const { rows } = await database.query(
-      `SELECT id, user_id AS "userId", reference, type, amount_minor AS "amountMinor",
-              currency, status, created_at AS "createdAt",
-              paystack_transaction_id AS "paystackTransactionId", confirmed_at AS "confirmedAt"
-       FROM toply_wallet_transactions WHERE user_id = $1 ORDER BY created_at DESC`,
-      [userId]
-    );
-    return rows.map((row) => ({ ...row, amountMinor: Number(row.amountMinor) }));
+  if (supabase) {
+    const { data, error } = await supabase.from("toply_wallet_transactions")
+      .select("*").eq("user_id", userId).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data.map((row) => ({
+      id: row.id, userId: row.user_id, reference: row.reference, type: row.type,
+      amountMinor: Number(row.amount_minor), currency: row.currency, status: row.status,
+      createdAt: row.created_at, paystackTransactionId: row.paystack_transaction_id,
+      confirmedAt: row.confirmed_at
+    }));
   }
   return readLocalRecords(walletTransactionsFile)
     .filter((transaction) => transaction.userId === userId)
@@ -224,28 +193,28 @@ async function listWalletTransactions(userId) {
 }
 
 async function findWalletTransactionByReference(reference) {
-  if (database) {
-    const { rows } = await database.query(
-      `SELECT id, user_id AS "userId", reference, type, amount_minor AS "amountMinor",
-              currency, status, created_at AS "createdAt",
-              paystack_transaction_id AS "paystackTransactionId", confirmed_at AS "confirmedAt"
-       FROM toply_wallet_transactions WHERE reference = $1`,
-      [reference]
-    );
-    return rows[0] ? { ...rows[0], amountMinor: Number(rows[0].amountMinor) } : null;
+  if (supabase) {
+    const { data, error } = await supabase.from("toply_wallet_transactions")
+      .select("*").eq("reference", reference).maybeSingle();
+    if (error) throw error;
+    return data ? {
+      id: data.id, userId: data.user_id, reference: data.reference, type: data.type,
+      amountMinor: Number(data.amount_minor), currency: data.currency, status: data.status,
+      createdAt: data.created_at, paystackTransactionId: data.paystack_transaction_id,
+      confirmedAt: data.confirmed_at
+    } : null;
   }
   return readLocalRecords(walletTransactionsFile).find((item) => item.reference === reference) || null;
 }
 
 async function insertWalletTransaction(transaction) {
-  if (database) {
-    await database.query(
-      `INSERT INTO toply_wallet_transactions
-       (id, user_id, reference, type, amount_minor, currency, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [transaction.id, transaction.userId, transaction.reference, transaction.type,
-        transaction.amountMinor, transaction.currency, transaction.status, transaction.createdAt]
-    );
+  if (supabase) {
+    const { error } = await supabase.from("toply_wallet_transactions").insert({
+      id: transaction.id, user_id: transaction.userId, reference: transaction.reference,
+      type: transaction.type, amount_minor: transaction.amountMinor, currency: transaction.currency,
+      status: transaction.status, created_at: transaction.createdAt
+    });
+    if (error) throw error;
     return;
   }
   await withWalletWriteLock(() => {
@@ -259,47 +228,32 @@ async function insertWalletTransaction(transaction) {
 }
 
 async function confirmWalletTransaction(reference, userId, verified) {
-  if (database) {
-    const client = await database.connect();
-    try {
-      await client.query("BEGIN");
-      const { rows } = await client.query(
-        `SELECT id, user_id AS "userId", reference, type, amount_minor AS "amountMinor",
-                currency, status, created_at AS "createdAt",
-                paystack_transaction_id AS "paystackTransactionId", confirmed_at AS "confirmedAt"
-         FROM toply_wallet_transactions WHERE reference = $1 FOR UPDATE`,
-        [reference]
-      );
-      const transaction = rows[0];
-      if (!transaction || transaction.userId !== userId) {
-        throw Object.assign(new Error("No pending deposit was found for this account."), { statusCode: 404 });
-      }
-      if (transaction.status !== "success") {
-        transaction.status = "success";
-        transaction.paystackTransactionId = String(verified.id);
-        transaction.confirmedAt = new Date().toISOString();
-        await client.query(
-          `UPDATE toply_wallet_transactions
-           SET status = $2, paystack_transaction_id = $3, confirmed_at = $4 WHERE reference = $1`,
-          [reference, transaction.status, transaction.paystackTransactionId, transaction.confirmedAt]
-        );
-      }
-      const balanceResult = await client.query(
-        `SELECT currency, SUM(amount_minor)::TEXT AS amount
-         FROM toply_wallet_transactions
-         WHERE user_id = $1 AND type = 'deposit' AND status = 'success'
-         GROUP BY currency`,
-        [userId]
-      );
-      const balances = Object.fromEntries(balanceResult.rows.map((row) => [row.currency, Number(row.amount)]));
-      await client.query("COMMIT");
-      return { transaction: { ...transaction, amountMinor: Number(transaction.amountMinor) }, balances };
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
+  if (supabase) {
+    const confirmedAt = new Date().toISOString();
+    const { data, error } = await supabase.from("toply_wallet_transactions")
+      .update({
+        status: "success",
+        paystack_transaction_id: String(verified.id),
+        confirmed_at: confirmedAt
+      })
+      .eq("reference", reference)
+      .eq("user_id", userId)
+      .neq("status", "success")
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    const transaction = data
+      ? {
+          id: data.id, userId: data.user_id, reference: data.reference, type: data.type,
+          amountMinor: Number(data.amount_minor), currency: data.currency, status: data.status,
+          createdAt: data.created_at, paystackTransactionId: data.paystack_transaction_id,
+          confirmedAt: data.confirmed_at
+        }
+      : await findWalletTransactionByReference(reference);
+    if (!transaction || transaction.userId !== userId) {
+      throw Object.assign(new Error("No pending deposit was found for this account."), { statusCode: 404 });
     }
+    return { transaction, balances: await walletBalancesFor(userId) };
   }
   return withWalletWriteLock(() => {
     const transactions = readLocalRecords(walletTransactionsFile);
