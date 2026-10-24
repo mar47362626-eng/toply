@@ -14,6 +14,8 @@ Open `http://localhost:3000`. See [PAYSTACK_SETUP.md](./PAYSTACK_SETUP.md) for p
 
 ## Data and hosting
 
-Account, session, order, and wallet data is stored in local JSON files. These files and `.env` are excluded from Git because they can contain private data. This storage is for local development only; a hosted deployment needs persistent database storage. Do not use this prototype to hold real customer funds.
+Local development without `DATABASE_URL` stores account, session, order, and wallet data in JSON files. With `DATABASE_URL`, the app uses PostgreSQL for those records. Production startup requires `DATABASE_URL`; attach a persistent PostgreSQL database to the Render web service and set it to the database's **internal** connection URL.
+
+Local JSON data is not automatically imported into PostgreSQL. Accounts and balances currently on the old Render deployment will not appear in the new database; users will need to register again. The wallet remains a prototype and is not ready to hold real customer funds.
 
 GitHub Pages cannot run this app's Node.js API. Hosting it publicly requires a Node.js web-service host.

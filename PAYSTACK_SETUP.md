@@ -13,18 +13,20 @@ The server sends the amount to Paystack in kobo and uses the signed-in account's
 
 ## Deploying
 
-- On Render, create a **Web Service** from the GitHub repository, use `node server.js` as the start command, and add these environment variables in the service's **Environment** settings:
+- On Render, create a persistent PostgreSQL database in the same region as the web service. In the web service's **Environment** settings, set `DATABASE_URL` to the database's **internal** connection URL. The app creates its tables at startup and refuses to start in production if this value is missing.
+- Set the web service's build command to `npm install` and start command to `npm start`.
+- Add these environment variables in the web service's **Environment** settings:
   - `NODE_ENV` = `production`
   - `HOST` = `0.0.0.0`
-  - `APP_BASE_URL` = your Render service's full HTTPS URL, such as `https://toply-example.onrender.com` (replace this with the URL Render assigns)
+  - `APP_BASE_URL` = `https://toply.onrender.com` (use your actual Render service URL)
   - `PAYSTACK_CURRENCY` = `NGN`
   - `PAYSTACK_LIVE_ENABLED` = `false`
 - Do not set `PORT`; Render supplies it automatically. Do not create or upload a `.env` file on GitHub.
-- Leave `PAYSTACK_SECRET_KEY` unset to keep Paystack deposits disabled. Never use a live key until you are ready to accept real payments and have completed the production requirements below.
-- Set `APP_BASE_URL` to the public website origin, for example `https://example.com`.
-- Configure the Paystack webhook URL as `https://example.com/api/paystack/webhook`.
-- Deploy behind HTTPS. In production, set `PAYSTACK_LIVE_ENABLED=true` only after replacing the test secret with the correct live secret and completing Paystack's account and business approvals.
+- Keep `PAYSTACK_SECRET_KEY` unset and `PAYSTACK_LIVE_ENABLED=false` while setting up and checking the database. Do not enable live payments yet.
+- The existing JSON files and accounts are not imported into PostgreSQL. Users will need to register again after the database-backed deployment.
+- Once the database-backed deployment is verified and all production requirements are met, add your Paystack live secret directly in Render's environment settings and explicitly enable live payments. Never paste the secret into source code, GitHub, or chat.
+- Configure the Paystack webhook URL as `https://toply.onrender.com/api/paystack/webhook` (replace the domain if your Render URL differs).
 - Never commit `.env`, send the secret key to the browser, or expose the JSON data files publicly.
 - A local `127.0.0.1` website cannot receive Paystack webhooks. The browser return can verify completed payments, while asynchronous bank transfers need the public webhook endpoint to update later.
 
-This is an initial NGN deposit-and-balance prototype, not a worldwide multi-currency wallet. Paystack account support varies by country and currency. It also does not yet deduct wallet funds for airtime, data, or gift-card orders, or support withdrawals. The current JSON-file storage is for local development only; use a transactional database and complete security, accounting, and compliance reviews before holding customer funds in production.
+This is an initial NGN deposit-and-balance prototype, not a worldwide multi-currency wallet. Paystack account support varies by country and currency. It also does not yet deduct wallet funds for airtime, data, or gift-card orders, or support withdrawals. Persistent storage alone does not make this prototype suitable for real customer funds; complete security, accounting, and compliance reviews first.

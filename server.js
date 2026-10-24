@@ -3,9 +3,11 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { promisify } = require("node:util");
+const { Pool } = require("pg");
 
 const scrypt = promisify(crypto.scrypt);
 const root = __dirname;
+const database = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
 const userFile = path.join(root, "user.json");
 const sessionFile = path.join(root, "session.json");
 const walletTransactionsFile = path.join(root, "wallet-transactions.json");
@@ -33,17 +35,13 @@ const publicFiles = new Map([
   ["script.js", "text/javascript; charset=utf-8"]
 ]);
 
-for (const file of [userFile, sessionFile, walletTransactionsFile, ...Object.values(orderFiles), transactionsFile]) {
-  if (!fs.existsSync(file)) fs.writeFileSync(file, "[]\n", { mode: 0o600 });
-}
-
-function readRecords(file) {
+function readLocalRecords(file) {
   const records = JSON.parse(fs.readFileSync(file, "utf8"));
   if (!Array.isArray(records)) throw new Error(`${path.basename(file)} must contain a JSON array.`);
   return records;
 }
 
-function writeRecords(file, records) {
+function writeLocalRecords(file, records) {
   fs.writeFileSync(file, `${JSON.stringify(records, null, 2)}\n`, { mode: 0o600 });
 }
 
@@ -52,6 +50,277 @@ function withWalletWriteLock(callback) {
   const result = walletWriteQueue.then(callback);
   walletWriteQueue = result.catch(() => {});
   return result;
+}
+
+async function initializeStorage() {
+  if (process.env.NODE_ENV === "production" && !database) {
+    throw new Error("DATABASE_URL is required in production. Attach a persistent PostgreSQL database before starting Toply.");
+  }
+  if (!database) {
+    for (const file of [userFile, sessionFile, walletTransactionsFile, ...Object.values(orderFiles), transactionsFile]) {
+      if (!fs.existsSync(file)) writeLocalRecords(file, []);
+    }
+    return;
+  }
+  await database.query(`
+    CREATE TABLE IF NOT EXISTS toply_users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS toply_sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES toply_users(id) ON DELETE CASCADE,
+      expires_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS toply_sessions_expiry_idx ON toply_sessions(expires_at);
+    CREATE TABLE IF NOT EXISTS toply_orders (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES toply_users(id),
+      order_type TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      data JSONB NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS toply_orders_user_created_idx ON toply_orders(user_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS toply_wallet_transactions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES toply_users(id),
+      reference TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL,
+      amount_minor BIGINT NOT NULL,
+      currency TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      paystack_transaction_id TEXT,
+      confirmed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS toply_wallet_user_created_idx
+      ON toply_wallet_transactions(user_id, created_at DESC);
+  `);
+}
+
+async function findUserById(userId) {
+  if (database) {
+    const { rows } = await database.query(
+      "SELECT id, name, email, password_hash AS \"passwordHash\", created_at AS \"createdAt\" FROM toply_users WHERE id = $1",
+      [userId]
+    );
+    return rows[0] || null;
+  }
+  return readLocalRecords(userFile).find((user) => user.id === userId) || null;
+}
+
+async function findUserByEmail(email) {
+  if (database) {
+    const { rows } = await database.query(
+      "SELECT id, name, email, password_hash AS \"passwordHash\", created_at AS \"createdAt\" FROM toply_users WHERE email = $1",
+      [email]
+    );
+    return rows[0] || null;
+  }
+  return readLocalRecords(userFile).find((user) => user.email === email) || null;
+}
+
+async function insertUser(user) {
+  if (database) {
+    await database.query(
+      "INSERT INTO toply_users (id, name, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)",
+      [user.id, user.name, user.email, user.passwordHash, user.createdAt]
+    );
+    return;
+  }
+  const users = readLocalRecords(userFile);
+  users.push(user);
+  writeLocalRecords(userFile, users);
+}
+
+async function findUserForSession(tokenHash) {
+  if (database) {
+    const { rows } = await database.query(
+      `SELECT u.id, u.name, u.email
+       FROM toply_sessions s
+       JOIN toply_users u ON u.id = s.user_id
+       WHERE s.token_hash = $1 AND s.expires_at > $2`,
+      [tokenHash, Date.now()]
+    );
+    return rows[0] || null;
+  }
+  const now = Date.now();
+  const sessions = readLocalRecords(sessionFile);
+  const validSessions = sessions.filter((session) => Number(session.expiresAt) > now);
+  if (validSessions.length !== sessions.length) writeLocalRecords(sessionFile, validSessions);
+  const session = validSessions.find((item) => item.tokenHash === tokenHash);
+  if (!session) return null;
+  const user = await findUserById(session.userId);
+  return user ? { id: user.id, name: user.name, email: user.email } : null;
+}
+
+async function insertSession(userId, tokenHash, expiresAt) {
+  if (database) {
+    await database.query(
+      "INSERT INTO toply_sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)",
+      [tokenHash, userId, expiresAt]
+    );
+    return;
+  }
+  const sessions = readLocalRecords(sessionFile);
+  sessions.push({ userId, tokenHash, expiresAt });
+  writeLocalRecords(sessionFile, sessions);
+}
+
+async function deleteSession(tokenHash) {
+  if (database) {
+    await database.query("DELETE FROM toply_sessions WHERE token_hash = $1", [tokenHash]);
+    return;
+  }
+  writeLocalRecords(sessionFile, readLocalRecords(sessionFile).filter((session) => session.tokenHash !== tokenHash));
+}
+
+async function insertOrder(order) {
+  if (database) {
+    await database.query(
+      "INSERT INTO toply_orders (id, user_id, order_type, created_at, data) VALUES ($1, $2, $3, $4, $5)",
+      [order.id, order.userId, order.type, order.createdAt, order]
+    );
+    return;
+  }
+  const typeRecords = readLocalRecords(orderFiles[order.type]);
+  typeRecords.push(order);
+  const allTransactions = readLocalRecords(transactionsFile);
+  allTransactions.push(order);
+  writeLocalRecords(orderFiles[order.type], typeRecords);
+  writeLocalRecords(transactionsFile, allTransactions);
+}
+
+async function listOrders(userId) {
+  if (database) {
+    const { rows } = await database.query(
+      "SELECT data FROM toply_orders WHERE user_id = $1 ORDER BY created_at DESC",
+      [userId]
+    );
+    return rows.map((row) => row.data);
+  }
+  return readLocalRecords(transactionsFile)
+    .filter((order) => order.userId === userId)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+async function listWalletTransactions(userId) {
+  if (database) {
+    const { rows } = await database.query(
+      `SELECT id, user_id AS "userId", reference, type, amount_minor AS "amountMinor",
+              currency, status, created_at AS "createdAt",
+              paystack_transaction_id AS "paystackTransactionId", confirmed_at AS "confirmedAt"
+       FROM toply_wallet_transactions WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId]
+    );
+    return rows.map((row) => ({ ...row, amountMinor: Number(row.amountMinor) }));
+  }
+  return readLocalRecords(walletTransactionsFile)
+    .filter((transaction) => transaction.userId === userId)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+async function findWalletTransactionByReference(reference) {
+  if (database) {
+    const { rows } = await database.query(
+      `SELECT id, user_id AS "userId", reference, type, amount_minor AS "amountMinor",
+              currency, status, created_at AS "createdAt",
+              paystack_transaction_id AS "paystackTransactionId", confirmed_at AS "confirmedAt"
+       FROM toply_wallet_transactions WHERE reference = $1`,
+      [reference]
+    );
+    return rows[0] ? { ...rows[0], amountMinor: Number(rows[0].amountMinor) } : null;
+  }
+  return readLocalRecords(walletTransactionsFile).find((item) => item.reference === reference) || null;
+}
+
+async function insertWalletTransaction(transaction) {
+  if (database) {
+    await database.query(
+      `INSERT INTO toply_wallet_transactions
+       (id, user_id, reference, type, amount_minor, currency, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [transaction.id, transaction.userId, transaction.reference, transaction.type,
+        transaction.amountMinor, transaction.currency, transaction.status, transaction.createdAt]
+    );
+    return;
+  }
+  await withWalletWriteLock(() => {
+    const transactions = readLocalRecords(walletTransactionsFile);
+    if (transactions.some((item) => item.reference === transaction.reference)) {
+      throw new Error("Paystack returned a duplicate payment reference.");
+    }
+    transactions.push(transaction);
+    writeLocalRecords(walletTransactionsFile, transactions);
+  });
+}
+
+async function confirmWalletTransaction(reference, userId, verified) {
+  if (database) {
+    const client = await database.connect();
+    try {
+      await client.query("BEGIN");
+      const { rows } = await client.query(
+        `SELECT id, user_id AS "userId", reference, type, amount_minor AS "amountMinor",
+                currency, status, created_at AS "createdAt",
+                paystack_transaction_id AS "paystackTransactionId", confirmed_at AS "confirmedAt"
+         FROM toply_wallet_transactions WHERE reference = $1 FOR UPDATE`,
+        [reference]
+      );
+      const transaction = rows[0];
+      if (!transaction || transaction.userId !== userId) {
+        throw Object.assign(new Error("No pending deposit was found for this account."), { statusCode: 404 });
+      }
+      if (transaction.status !== "success") {
+        transaction.status = "success";
+        transaction.paystackTransactionId = String(verified.id);
+        transaction.confirmedAt = new Date().toISOString();
+        await client.query(
+          `UPDATE toply_wallet_transactions
+           SET status = $2, paystack_transaction_id = $3, confirmed_at = $4 WHERE reference = $1`,
+          [reference, transaction.status, transaction.paystackTransactionId, transaction.confirmedAt]
+        );
+      }
+      const balanceResult = await client.query(
+        `SELECT currency, SUM(amount_minor)::TEXT AS amount
+         FROM toply_wallet_transactions
+         WHERE user_id = $1 AND type = 'deposit' AND status = 'success'
+         GROUP BY currency`,
+        [userId]
+      );
+      const balances = Object.fromEntries(balanceResult.rows.map((row) => [row.currency, Number(row.amount)]));
+      await client.query("COMMIT");
+      return { transaction: { ...transaction, amountMinor: Number(transaction.amountMinor) }, balances };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  return withWalletWriteLock(() => {
+    const transactions = readLocalRecords(walletTransactionsFile);
+    const transaction = transactions.find((item) => item.reference === reference);
+    if (!transaction || transaction.userId !== userId) {
+      throw Object.assign(new Error("No pending deposit was found for this account."), { statusCode: 404 });
+    }
+    if (transaction.status !== "success") {
+      transaction.status = "success";
+      transaction.paystackTransactionId = String(verified.id);
+      transaction.confirmedAt = new Date().toISOString();
+      writeLocalRecords(walletTransactionsFile, transactions);
+    }
+    const balances = transactions
+      .filter((item) => item.userId === userId && item.type === "deposit" && item.status === "success")
+      .reduce((result, item) => {
+        result[item.currency] = (result[item.currency] || 0) + item.amountMinor;
+        return result;
+      }, {});
+    return { transaction, balances };
+  });
 }
 
 function jsonResponse(response, statusCode, payload, headers = {}) {
@@ -80,18 +349,11 @@ function setSessionCookie(response, token) {
   response.setHeader("Set-Cookie", `${sessionCookie}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(sessionLifetimeMs / 1000)}${secure}`);
 }
 
-function currentUser(request) {
+async function currentUser(request) {
   const token = getCookie(request, sessionCookie);
   if (!/^[a-f0-9]{64}$/.test(token)) return null;
-  const now = Date.now();
-  const sessions = readRecords(sessionFile);
-  const validSessions = sessions.filter((session) => Number(session.expiresAt) > now);
-  if (validSessions.length !== sessions.length) writeRecords(sessionFile, validSessions);
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const session = validSessions.find((item) => item.tokenHash === tokenHash);
-  if (!session) return null;
-  const user = readRecords(userFile).find((item) => item.id === session.userId);
-  return user ? { id: user.id, name: user.name, email: user.email } : null;
+  return findUserForSession(tokenHash);
 }
 
 function validateRequestOrigin(request) {
@@ -194,15 +456,13 @@ async function verifyPassword(password, encodedHash) {
   return crypto.timingSafeEqual(actualHash, Buffer.from(hashHex, "hex"));
 }
 
-function createSession(response, userId) {
+async function createSession(response, userId) {
   const token = crypto.randomBytes(32).toString("hex");
-  const sessions = readRecords(sessionFile);
-  sessions.push({
+  await insertSession(
     userId,
-    tokenHash: crypto.createHash("sha256").update(token).digest("hex"),
-    expiresAt: Date.now() + sessionLifetimeMs
-  });
-  writeRecords(sessionFile, sessions);
+    crypto.createHash("sha256").update(token).digest("hex"),
+    Date.now() + sessionLifetimeMs
+  );
   setSessionCookie(response, token);
 }
 
@@ -239,7 +499,7 @@ function validateOrder(body, type) {
   return "";
 }
 
-function saveOrder(user, type, body) {
+async function saveOrder(user, type, body) {
   const order = {
     id: crypto.randomUUID(),
     userId: user.id,
@@ -258,12 +518,7 @@ function saveOrder(user, type, body) {
     order.phone = body.phone.trim();
     if (type === "data") order.plan = body.plan.trim();
   }
-  const typeRecords = readRecords(orderFiles[type]);
-  typeRecords.push(order);
-  const allTransactions = readRecords(transactionsFile);
-  allTransactions.push(order);
-  writeRecords(orderFiles[type], typeRecords);
-  writeRecords(transactionsFile, allTransactions);
+  await insertOrder(order);
   return order;
 }
 
@@ -312,8 +567,8 @@ async function paystackRequest(endpoint, options = {}) {
   return result.data;
 }
 
-function walletBalancesFor(userId) {
-  return readRecords(walletTransactionsFile)
+async function walletBalancesFor(userId) {
+  return (await listWalletTransactions(userId))
     .filter((transaction) => transaction.userId === userId && transaction.type === "deposit" && transaction.status === "success")
     .reduce((balances, transaction) => {
       balances[transaction.currency] = (balances[transaction.currency] || 0) + transaction.amountMinor;
@@ -327,7 +582,7 @@ async function verifyPaystackReference(reference, userId) {
   if (typeof reference !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(reference)) {
     throw Object.assign(new Error("Payment reference is invalid."), { statusCode: 400 });
   }
-  const pending = readRecords(walletTransactionsFile).find((item) => item.reference === reference);
+  const pending = await findWalletTransactionByReference(reference);
   if (!pending || pending.userId !== userId) {
     throw Object.assign(new Error("No pending deposit was found for this account."), { statusCode: 404 });
   }
@@ -336,20 +591,7 @@ async function verifyPaystackReference(reference, userId) {
       verified.amount !== pending.amountMinor || verified.currency !== pending.currency) {
     throw Object.assign(new Error("Paystack has not confirmed this deposit. Your balance has not changed."), { statusCode: 409 });
   }
-  return withWalletWriteLock(() => {
-    const transactions = readRecords(walletTransactionsFile);
-    const current = transactions.find((item) => item.reference === reference);
-    if (!current || current.userId !== userId) {
-      throw Object.assign(new Error("No pending deposit was found for this account."), { statusCode: 404 });
-    }
-    if (current.status !== "success") {
-      current.status = "success";
-      current.paystackTransactionId = String(verified.id);
-      current.confirmedAt = new Date().toISOString();
-      writeRecords(walletTransactionsFile, transactions);
-    }
-    return { transaction: current, balances: walletBalancesFor(userId) };
-  });
+  return confirmWalletTransaction(reference, userId, verified);
 }
 
 async function handlePaystackWebhook(request, response) {
@@ -371,7 +613,7 @@ async function handlePaystackWebhook(request, response) {
   if (event.event !== "charge.success" || !event.data || typeof event.data.reference !== "string") {
     return jsonResponse(response, 200, { received: true });
   }
-  const pending = readRecords(walletTransactionsFile).find((item) => item.reference === event.data.reference);
+  const pending = await findWalletTransactionByReference(event.data.reference);
   if (!pending) return jsonResponse(response, 200, { received: true });
   try {
     await verifyPaystackReference(pending.reference, pending.userId);
@@ -388,18 +630,17 @@ async function handleApi(request, response, pathname) {
   }
 
   if (pathname === "/api/wallet" && request.method === "GET") {
-    const user = currentUser(request);
+    const user = await currentUser(request);
     if (!user) return jsonResponse(response, 401, { error: "You are not signed in." });
-    const deposits = readRecords(walletTransactionsFile)
-      .filter((transaction) => transaction.userId === user.id && transaction.type === "deposit")
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    const deposits = (await listWalletTransactions(user.id))
+      .filter((transaction) => transaction.type === "deposit")
       .map(({ id, amountMinor, currency, status, createdAt }) => ({ id, amountMinor, currency, status, createdAt }));
-    return jsonResponse(response, 200, { currency: paystackCurrency, balances: walletBalancesFor(user.id), deposits });
+    return jsonResponse(response, 200, { currency: paystackCurrency, balances: await walletBalancesFor(user.id), deposits });
   }
 
   if (pathname === "/api/payments/paystack/initialize" && request.method === "POST") {
     if (!validateRequestOrigin(request)) return jsonResponse(response, 403, { error: "Request origin was rejected." });
-    const user = currentUser(request);
+    const user = await currentUser(request);
     if (!user) return jsonResponse(response, 401, { error: "Please log in before adding money." });
     const configurationError = paystackConfigurationError();
     if (configurationError) return jsonResponse(response, 503, { error: configurationError });
@@ -438,22 +679,15 @@ async function handleApi(request, response, pathname) {
           typeof data.authorization_url !== "string" || !data.authorization_url.startsWith("https://")) {
         throw new Error("Paystack returned invalid checkout details.");
       }
-      await withWalletWriteLock(() => {
-        const transactions = readRecords(walletTransactionsFile);
-        if (transactions.some((item) => item.reference === data.reference)) {
-          throw new Error("Paystack returned a duplicate payment reference.");
-        }
-        transactions.push({
-          id: crypto.randomUUID(),
-          userId: user.id,
-          reference: data.reference,
-          type: "deposit",
-          amountMinor,
-          currency: paystackCurrency,
-          status: "pending",
-          createdAt: new Date().toISOString()
-        });
-        writeRecords(walletTransactionsFile, transactions);
+      await insertWalletTransaction({
+        id: crypto.randomUUID(),
+        userId: user.id,
+        reference: data.reference,
+        type: "deposit",
+        amountMinor,
+        currency: paystackCurrency,
+        status: "pending",
+        createdAt: new Date().toISOString()
       });
       return jsonResponse(response, 201, { authorizationUrl: data.authorization_url, reference: data.reference });
     } catch (error) {
@@ -464,7 +698,7 @@ async function handleApi(request, response, pathname) {
 
   if (pathname === "/api/payments/paystack/verify" && request.method === "POST") {
     if (!validateRequestOrigin(request)) return jsonResponse(response, 403, { error: "Request origin was rejected." });
-    const user = currentUser(request);
+    const user = await currentUser(request);
     if (!user) return jsonResponse(response, 401, { error: "Please log in to verify this deposit." });
     let body;
     try {
@@ -481,7 +715,7 @@ async function handleApi(request, response, pathname) {
   }
 
   if (pathname === "/api/auth/me" && request.method === "GET") {
-    const user = currentUser(request);
+    const user = await currentUser(request);
     if (!user) return jsonResponse(response, 200, { user: null });
     return jsonResponse(response, 200, { user });
   }
@@ -493,17 +727,15 @@ async function handleApi(request, response, pathname) {
     const token = getCookie(request, sessionCookie);
     if (/^[a-f0-9]{64}$/.test(token)) {
       const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-      writeRecords(sessionFile, readRecords(sessionFile).filter((session) => session.tokenHash !== tokenHash));
+      await deleteSession(tokenHash);
     }
     return jsonResponse(response, 200, { ok: true }, { "Set-Cookie": cookieOptions(0) });
   }
 
   if (pathname === "/api/orders" && request.method === "GET") {
-    const user = currentUser(request);
+    const user = await currentUser(request);
     if (!user) return jsonResponse(response, 401, { error: "You are not signed in." });
-    const orders = readRecords(transactionsFile)
-      .filter((order) => order.userId === user.id)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const orders = await listOrders(user.id);
     return jsonResponse(response, 200, { orders });
   }
 
@@ -512,7 +744,7 @@ async function handleApi(request, response, pathname) {
     if (!validateRequestOrigin(request)) {
       return jsonResponse(response, 403, { error: "Request origin was rejected." });
     }
-    const user = currentUser(request);
+    const user = await currentUser(request);
     if (!user) return jsonResponse(response, 401, { error: "Please log in before saving an order." });
     let body;
     try {
@@ -523,7 +755,7 @@ async function handleApi(request, response, pathname) {
     const type = orderMatch[1];
     const validationError = validateOrder(body, type);
     if (validationError) return jsonResponse(response, 400, { error: validationError });
-    const order = saveOrder(user, type, body);
+    const order = await saveOrder(user, type, body);
     return jsonResponse(response, 201, { order });
   }
 
@@ -544,8 +776,7 @@ async function handleApi(request, response, pathname) {
     const email = body.email.trim().toLowerCase();
     if (isRegistration) {
       const passwordHash = await makePasswordHash(body.password);
-      const users = readRecords(userFile);
-      if (users.some((user) => user.email === email)) {
+      if (await findUserByEmail(email)) {
         return jsonResponse(response, 409, { error: "An account with this email already exists. Try logging in." });
       }
       const name = body.name.trim().replace(/\s+/g, " ");
@@ -556,21 +787,26 @@ async function handleApi(request, response, pathname) {
         passwordHash,
         createdAt: new Date().toISOString()
       };
-      users.push(user);
-      writeRecords(userFile, users);
-      createSession(response, user.id);
+      try {
+        await insertUser(user);
+      } catch (error) {
+        if (error.code === "23505") {
+          return jsonResponse(response, 409, { error: "An account with this email already exists. Try logging in." });
+        }
+        throw error;
+      }
+      await createSession(response, user.id);
       return jsonResponse(response, 201, { user: { id: user.id, name: user.name, email: user.email } });
     }
 
-    const users = readRecords(userFile);
-    const user = users.find((item) => item.email === email);
+    const user = await findUserByEmail(email);
     const passwordMatches = user
       ? await verifyPassword(body.password, user.passwordHash)
       : await verifyPassword(body.password, await dummyPasswordHash);
     if (!user || !passwordMatches) {
       return jsonResponse(response, 401, { error: "Email or password is incorrect." });
     }
-    createSession(response, user.id);
+    await createSession(response, user.id);
     return jsonResponse(response, 200, { user: { id: user.id, name: user.name, email: user.email } });
   }
 
@@ -590,7 +826,7 @@ async function handleRequest(request, response) {
     response.end("Not found");
     return;
   }
-  if (protectedPages.has(filename) && !currentUser(request)) {
+  if (protectedPages.has(filename) && !await currentUser(request)) {
     response.writeHead(303, { Location: "/index.html", "Cache-Control": "no-store" });
     response.end();
     return;
@@ -618,6 +854,11 @@ const server = http.createServer((request, response) => {
 
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
-server.listen(port, host, () => {
-  console.log(`Toply is running at http://${host}:${port}`);
+initializeStorage().then(() => {
+  server.listen(port, host, () => {
+    console.log(`Toply is running at http://${host}:${port}`);
+  });
+}).catch((error) => {
+  console.error("Storage initialization failed:", error);
+  process.exitCode = 1;
 });
