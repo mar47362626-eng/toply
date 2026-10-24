@@ -493,6 +493,10 @@ function renderTransactions(container, orders, deposits, filter) {
         : order.provider?.startsWith("VTpass") ? `VTpass · ${order.status}` : "Saved preview";
     status.append(statusText);
     if (order.provider?.startsWith("VTpass") && order.status === "pending") {
+      const feedback = document.createElement("div");
+      feedback.className = "transaction-status-feedback";
+      feedback.setAttribute("role", "alert");
+      feedback.hidden = true;
       const checkButton = document.createElement("button");
       checkButton.type = "button";
       checkButton.className = "transaction-requery";
@@ -500,25 +504,34 @@ function renderTransactions(container, orders, deposits, filter) {
       checkButton.addEventListener("click", async () => {
         checkButton.disabled = true;
         checkButton.textContent = "Checking…";
-        statusText.textContent = "Checking status with VTpass…";
+        feedback.hidden = false;
+        feedback.textContent = "Checking status with VTpass…";
         try {
           const response = await fetch(`/api/providers/vtpass/orders/${encodeURIComponent(order.id)}/requery`, {
             method: "POST",
             headers: { Accept: "application/json" }
           });
-          const result = await response.json();
+          let result;
+          try {
+            result = await response.json();
+          } catch {
+            throw new Error(`The server returned an unreadable response (HTTP ${response.status}).`);
+          }
           if (!response.ok) throw new Error(result.error || "Could not check order status.");
           statusText.textContent = `${result.order.sandbox ? "VTpass sandbox" : "VTpass"} · ${result.order.status}`;
+          feedback.textContent = result.order.status === "pending"
+            ? "VTpass still reports this order as pending. Do not submit it again."
+            : `Status updated: ${result.order.status}.`;
           await refreshWallet();
           await loadSavedOrders();
         } catch (error) {
-          statusText.textContent = `Status check failed: ${error.message}. Order remains pending; do not submit it again.`;
+          feedback.textContent = `Status check failed: ${error.message} The order remains pending; do not submit it again.`;
         } finally {
           checkButton.disabled = false;
           checkButton.textContent = "Check status";
         }
       });
-      status.append(document.createElement("br"), checkButton);
+      status.append(document.createElement("br"), checkButton, feedback);
     }
     const amount = document.createElement("td");
     amount.className = "amount-column";
