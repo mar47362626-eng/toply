@@ -621,10 +621,17 @@ async function vtpassRequest(endpoint, { method = "GET", body } = {}) {
   try {
     result = await response.json();
   } catch {
-    throw Object.assign(new Error("VTpass returned an unreadable response."), { statusCode: 502 });
+    throw Object.assign(new Error(`VTpass ${endpoint} returned an unreadable response (HTTP ${response.status}).`), { statusCode: 502 });
   }
   if (!response.ok) {
-    throw Object.assign(new Error(result.response_description || "VTpass could not complete the request."), { statusCode: 502 });
+    const description = result && typeof result.response_description === "string"
+      ? result.response_description.slice(0, 300)
+      : result && typeof result.message === "string" ? result.message.slice(0, 300) : "";
+    const detail = description ? `: ${description}` : "";
+    throw Object.assign(new Error(`VTpass ${endpoint} failed with HTTP ${response.status}${detail}.`), {
+      statusCode: 502,
+      providerStatus: response.status
+    });
   }
   return result;
 }

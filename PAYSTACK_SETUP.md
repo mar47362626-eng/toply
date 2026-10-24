@@ -62,6 +62,8 @@ Live purchases are disabled by default. VTpass must approve/provision a live acc
 
 Do not use the service with customer money until you have confirmed provider settlement, tested failure/refund handling, set up support and reconciliation, and checked local legal/payment requirements. The code cannot activate a VTpass account or prove that the live credentials work.
 
+If **Check status** returns `502`, the server response now includes the VTpass endpoint's HTTP status and any provider description. Check Render logs and the browser Network response for that detail. Confirm the order was created in the same VTpass environment as the credentials currently configured, and that the API key and secret key both belong to that environment. Do not retry a purchase with an unclear status or share credentials.
+
 Official VTpass references: [sandbox/live integration](https://www.vtpass.com/documentation/integrating-api/), [API key authentication](https://www.vtpass.com/documentation/authentication/), [airtime API](https://www.vtpass.com/documentation/airtime-vtu-api/), [data API](https://www.vtpass.com/documentation/data-subscription-api/), [variation codes](https://www.vtpass.com/documentation/variation-codes/), and [transaction requery](https://www.vtpass.com/documentation/re-query-services/).
 
 ### Supabase SQL schema
